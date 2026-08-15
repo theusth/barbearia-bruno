@@ -263,7 +263,7 @@ async function loadBlockedSlots() {
 
   const { data, error } = await supabase
     .from("blocked_slots")
-    .select("id,block_date,block_time,reserved_for,client_phone,notes,created_by,created_at,group_id,recurrence_days,recurrence_weekday")
+    .select("id,block_date,block_time,reserved_for,client_phone,notes,created_by,created_at,group_id,recurrence_days,recurrence_weekday,recurrence_frequency_weeks")
     .order("block_date", { ascending: true })
     .order("block_time", { ascending: true });
 
@@ -283,11 +283,12 @@ async function createBlockedSlot() {
   const weekday = Number($("#blockWeekday")?.value);
   const block_time = $("#blockTime")?.value;
   const duration_days = Number($("#blockDuration")?.value);
+  const frequency_weeks = Number($("#blockFrequency")?.value || 1);
   const reserved_for = $("#blockClient")?.value.trim();
   const client_phone = $("#blockPhone")?.value.trim() || null;
   const notes = $("#blockNotes")?.value.trim() || null;
 
-  if (!start_date || Number.isNaN(weekday) || !block_time || !duration_days || !reserved_for) {
+  if (!start_date || Number.isNaN(weekday) || !block_time || !duration_days || ![1,2].includes(frequency_weeks) || !reserved_for) {
     return showToast("Preencha início, dia da semana, horário, duração e cliente.", true);
   }
 
@@ -296,6 +297,7 @@ async function createBlockedSlot() {
     p_weekday: weekday,
     p_time: block_time,
     p_duration_days: duration_days,
+    p_frequency_weeks: frequency_weeks,
     p_reserved_for: reserved_for,
     p_client_phone: client_phone,
     p_notes: notes
@@ -398,6 +400,13 @@ function renderBlockedSlots() {
             </select>
           </label>
 
+          <label>Frequência
+            <select id="blockFrequency">
+              <option value="1">Toda semana</option>
+              <option value="2">Semana sim, semana não</option>
+            </select>
+          </label>
+
           <label>Manter bloqueado por
             <select id="blockDuration">
               <option value="30">30 dias</option>
@@ -443,7 +452,7 @@ function renderBlockedSlots() {
                 <p>
                   ${fmtDate(b.block_date)}
                   ${b.client_phone ? ` • ${escapeHtml(b.client_phone)}` : ""}
-                  ${b.recurrence_days ? ` • série de ${b.recurrence_days === 365 ? "1 ano" : b.recurrence_days + " dias"}` : ""}
+                  ${b.recurrence_days ? ` • ${b.recurrence_frequency_weeks === 2 ? "semana sim, semana não" : "toda semana"} • ${b.recurrence_days === 365 ? "1 ano" : b.recurrence_days + " dias"}` : ""}
                   ${b.notes ? ` • ${escapeHtml(b.notes)}` : ""}
                 </p>
               </div>
@@ -512,37 +521,46 @@ function isEmail(value) {
   return String(value || "").includes("@");
 }
 
+function internalEmailFromPhone(phone) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  return `cliente.${digits}@brunobarbearia.local`;
+}
+
 async function login(identifier, password) {
   const value = String(identifier || "").trim();
 
-  let credentials;
+  let email;
 
   if (isEmail(value)) {
-    credentials = {
-      email: value.toLowerCase(),
-      password
-    };
+    email = value.toLowerCase();
   } else {
     const phone = normalizePhoneBR(value);
 
     if (!phone) {
-      return showToast("Digite um e-mail ou telefone válido.", true);
+      return showToast("Digite um telefone válido com DDD.", true);
     }
 
-    credentials = {
-      phone,
-      password
-    };
+    email = internalEmailFromPhone(phone);
   }
 
-  const { data, error } = await supabase.auth.signInWithPassword(credentials);
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password
+  });
 
   if (error) {
-    return showToast("E-mail/telefone ou senha incorretos.", true);
+    console.error(error);
+    return showToast("Telefone/e-mail ou senha incorretos.", true);
   }
 
   state.user = data.user;
-  await Promise.all([loadProfile(), loadServices(), loadBusinessSettings()]);
+
+  await Promise.all([
+    loadProfile(),
+    loadServices(),
+    loadBusinessSettings()
+  ]);
+
   await loadAppointments();
 
   if (state.profile?.role === "owner") {
@@ -558,68 +576,70 @@ async function login(identifier, password) {
 }
 
 async function register(name, email, phone, password) {
+  const cleanName = String(name || "").trim();
   const cleanEmail = String(email || "").trim().toLowerCase();
   const normalizedPhone = normalizePhoneBR(phone);
+
+  if (!cleanName) {
+    return showToast("Digite seu nome.", true);
+  }
 
   if (!normalizedPhone) {
     return showToast("Digite um telefone válido com DDD.", true);
   }
 
-  const options = {
-    data: {
-      name,
-      phone: normalizedPhone
-    }
-  };
+  if (!password || password.length < 6) {
+    return showToast("A senha precisa ter pelo menos 6 caracteres.", true);
+  }
 
-  const credentials = cleanEmail
-    ? {
-        email: cleanEmail,
-        password,
-        options
-      }
-    : {
+  const authEmail = cleanEmail || internalEmailFromPhone(normalizedPhone);
+
+  const { data, error } = await supabase.auth.signUp({
+    email: authEmail,
+    password,
+    options: {
+      data: {
+        name: cleanName,
         phone: normalizedPhone,
-        password,
-        options
-      };
-
-  const { data, error } = await supabase.auth.signUp(credentials);
+        public_email: cleanEmail || null,
+        uses_internal_email: !cleanEmail
+      }
+    }
+  });
 
   if (error) {
     console.error(error);
 
     const message = (error.message || "").toLowerCase();
 
-    if (message.includes("phone provider") || message.includes("phone signups")) {
-      return showToast(
-        "Cadastro sem e-mail exige o login por telefone ativado no Supabase.",
-        true
-      );
-    }
-
-    if (message.includes("already registered") || message.includes("already been registered")) {
-      return showToast("Esse e-mail ou telefone já está cadastrado.", true);
+    if (
+      message.includes("already registered") ||
+      message.includes("already been registered") ||
+      message.includes("user already registered")
+    ) {
+      return showToast("Esse telefone ou e-mail já possui uma conta.", true);
     }
 
     return showToast(error.message || "Não foi possível criar a conta.", true);
   }
 
   if (!data.session) {
-    closeModal("authModal");
-    authTab("login");
-
-    showToast(
-      cleanEmail
-        ? "Conta criada. Se a confirmação estiver ativa, confirme o e-mail para entrar."
-        : "Conta criada. Se a confirmação por telefone estiver ativa, confirme o SMS para entrar."
+    return showToast(
+      "Conta criada, mas o Supabase está exigindo confirmação de e-mail. Desative Confirm email.",
+      true
     );
-    return;
   }
 
   state.user = data.user;
-  await Promise.all([loadProfile(), loadServices(), loadBusinessSettings()]);
+
+  await Promise.all([
+    loadProfile(),
+    loadServices(),
+    loadBusinessSettings()
+  ]);
+
   await loadAppointments();
+
   closeModal("authModal");
   enterDashboard();
   showToast("Conta criada com sucesso.");
@@ -987,7 +1007,7 @@ function renderProfile() {
         <div class="panel-title"><h3>Informações pessoais</h3></div>
         <div class="profile-fields">
           <label>Nome<input id="profileName" value="${escapeAttr(state.profile.name || "")}"></label>
-          <label>E-mail<input value="${escapeAttr(state.user.email || "")}" disabled></label>
+          <label>E-mail<input value="${escapeAttr(state.user.user_metadata?.public_email || (state.profile.role === "owner" ? state.user.email : "Não informado"))}" disabled></label>
           <label>Telefone<input id="profilePhone" value="${escapeAttr(state.profile.phone || "")}"></label>
           <label>Tipo de conta<input value="${state.profile.role === "owner" ? "Proprietário" : "Cliente"}" disabled></label>
         </div>
