@@ -512,46 +512,37 @@ function isEmail(value) {
   return String(value || "").includes("@");
 }
 
-function internalEmailFromPhone(phone) {
-  const digits = String(phone || "").replace(/\D/g, "");
-  return `cliente.${digits}@brunobarbearia.local`;
-}
-
 async function login(identifier, password) {
   const value = String(identifier || "").trim();
 
-  let email;
+  let credentials;
 
   if (isEmail(value)) {
-    email = value.toLowerCase();
+    credentials = {
+      email: value.toLowerCase(),
+      password
+    };
   } else {
     const phone = normalizePhoneBR(value);
 
     if (!phone) {
-      return showToast("Digite um telefone válido com DDD.", true);
+      return showToast("Digite um e-mail ou telefone válido.", true);
     }
 
-    email = internalEmailFromPhone(phone);
+    credentials = {
+      phone,
+      password
+    };
   }
 
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password
-  });
+  const { data, error } = await supabase.auth.signInWithPassword(credentials);
 
   if (error) {
-    console.error(error);
-    return showToast("Telefone/e-mail ou senha incorretos.", true);
+    return showToast("E-mail/telefone ou senha incorretos.", true);
   }
 
   state.user = data.user;
-
-  await Promise.all([
-    loadProfile(),
-    loadServices(),
-    loadBusinessSettings()
-  ]);
-
+  await Promise.all([loadProfile(), loadServices(), loadBusinessSettings()]);
   await loadAppointments();
 
   if (state.profile?.role === "owner") {
@@ -567,74 +558,68 @@ async function login(identifier, password) {
 }
 
 async function register(name, email, phone, password) {
-  const cleanName = String(name || "").trim();
   const cleanEmail = String(email || "").trim().toLowerCase();
   const normalizedPhone = normalizePhoneBR(phone);
-
-  if (!cleanName) {
-    return showToast("Digite seu nome.", true);
-  }
 
   if (!normalizedPhone) {
     return showToast("Digite um telefone válido com DDD.", true);
   }
 
-  if (!password || password.length < 6) {
-    return showToast("A senha precisa ter pelo menos 6 caracteres.", true);
-  }
-
-  const authEmail = cleanEmail || internalEmailFromPhone(normalizedPhone);
-
-  const { data, error } = await supabase.auth.signUp({
-    email: authEmail,
-    password,
-    options: {
-      data: {
-        name: cleanName,
-        phone: normalizedPhone,
-        public_email: cleanEmail || null,
-        uses_internal_email: !cleanEmail
-      }
+  const options = {
+    data: {
+      name,
+      phone: normalizedPhone
     }
-  });
+  };
+
+  const credentials = cleanEmail
+    ? {
+        email: cleanEmail,
+        password,
+        options
+      }
+    : {
+        phone: normalizedPhone,
+        password,
+        options
+      };
+
+  const { data, error } = await supabase.auth.signUp(credentials);
 
   if (error) {
     console.error(error);
 
     const message = (error.message || "").toLowerCase();
 
-    if (
-      message.includes("already registered") ||
-      message.includes("already been registered") ||
-      message.includes("user already registered")
-    ) {
-      return showToast("Esse telefone ou e-mail já possui uma conta.", true);
+    if (message.includes("phone provider") || message.includes("phone signups")) {
+      return showToast(
+        "Cadastro sem e-mail exige o login por telefone ativado no Supabase.",
+        true
+      );
     }
 
-    if (message.includes("email rate limit")) {
-      return showToast("O Supabase limitou novos cadastros temporariamente. Tente novamente mais tarde.", true);
+    if (message.includes("already registered") || message.includes("already been registered")) {
+      return showToast("Esse e-mail ou telefone já está cadastrado.", true);
     }
 
     return showToast(error.message || "Não foi possível criar a conta.", true);
   }
 
   if (!data.session) {
-    return showToast(
-      "Conta criada, mas o Supabase está exigindo confirmação de e-mail. Desative 'Confirm email' no Supabase.",
-      true
+    closeModal("authModal");
+    authTab("login");
+
+    showToast(
+      cleanEmail
+        ? "Conta criada. Se a confirmação estiver ativa, confirme o e-mail para entrar."
+        : "Conta criada. Se a confirmação por telefone estiver ativa, confirme o SMS para entrar."
     );
+    return;
   }
 
   state.user = data.user;
-
-  await Promise.all([
-    loadProfile(),
-    loadServices(),
-    loadBusinessSettings()
-  ]);
-
+  await Promise.all([loadProfile(), loadServices(), loadBusinessSettings()]);
   await loadAppointments();
-
   closeModal("authModal");
   enterDashboard();
   showToast("Conta criada com sucesso.");
@@ -668,11 +653,110 @@ function exitDashboard() {
   window.scrollTo({top:0, behavior:"smooth"});
 }
 
+
+async function loadOwnerAvailability(date) {
+  if (!CONFIGURED || state.profile?.role !== "owner") return [];
+
+  const { data, error } = await supabase
+    .rpc("get_booked_times", { p_date: date });
+
+  if (error) {
+    console.error(error);
+    showToast("Não foi possível consultar os horários.", true);
+    return [];
+  }
+
+  return (data || []).map(item =>
+    String(item.appointment_time).slice(0, 5)
+  );
+}
+
+async function renderOwnerAvailability(date) {
+  const container = $("#availabilityResults");
+  if (!container) return;
+
+  container.innerHTML = `<div class="loading-card">Consultando horários...</div>`;
+
+  const busyTimes = new Set(await loadOwnerAvailability(date));
+
+  const freeCount = TIMES.filter(time => !busyTimes.has(time)).length;
+  const busyCount = TIMES.length - freeCount;
+
+  container.innerHTML = `
+    <div class="dash-grid" style="margin-bottom:18px">
+      ${metric("Horários livres", freeCount, "Disponíveis para agendamento")}
+      ${metric("Ocupados / bloqueados", busyCount, "Indisponíveis")}
+      ${metric("Total do dia", TIMES.length, "Horários configurados")}
+    </div>
+
+    <section class="panel-card">
+      <div class="panel-title">
+        <div>
+          <h3>Disponibilidade do dia</h3>
+          <span>${fmtDate(date)}</span>
+        </div>
+      </div>
+
+      <div class="availability-grid">
+        ${TIMES.map(time => {
+          const busy = busyTimes.has(time);
+
+          return `
+            <div class="availability-slot ${busy ? "busy" : "free"}">
+              <strong>${time}</strong>
+              <span>${busy ? "Ocupado" : "Livre"}</span>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderAvailabilityView() {
+  const today = new Date().toISOString().slice(0,10);
+
+  $("#dashTitle").textContent = "Horários disponíveis";
+
+  $("#dashboardContent").innerHTML = `
+    <section class="panel-card" style="margin-bottom:18px">
+      <div class="panel-title">
+        <div>
+          <h3>Consultar disponibilidade</h3>
+          <span>Escolha uma data para ver os horários livres</span>
+        </div>
+      </div>
+
+      <div class="owner-settings-grid">
+        <label>Data
+          <input
+            type="date"
+            id="availabilityDate"
+            min="${today}"
+            value="${today}"
+          >
+        </label>
+      </div>
+    </section>
+
+    <div id="availabilityResults"></div>
+  `;
+
+  const input = $("#availabilityDate");
+
+  input.onchange = () => {
+    renderOwnerAvailability(input.value);
+  };
+
+  renderOwnerAvailability(today);
+}
+
+
 function renderDashboardNav() {
   if (!state.profile) return;
   const owner = state.profile.role === "owner";
   const items = owner
-    ? [["overview","Visão geral"],["agenda","Agenda"],["blocked","Horários bloqueados"],["services","Serviços"],["clients","Clientes"],["business","Barbearia"],["logs","Logs"],["profile","Meu perfil"]]
+    ? [["overview","Visão geral"],["agenda","Agenda"],["availability","Horários disponíveis"],["blocked","Horários bloqueados"],["services","Serviços"],["clients","Clientes"],["business","Barbearia"],["logs","Logs"],["profile","Meu perfil"]]
     : [["overview","Visão geral"],["appointments","Meus horários"],["new","Novo agendamento"],["profile","Meu perfil"]];
   $("#dashboardNav").innerHTML = items.map(([id,label]) =>
     `<button class="${state.dashView===id?"active":""}" data-view="${id}">${label}</button>`
@@ -753,6 +837,7 @@ function renderOwner() {
           <div class="panel-title"><h3>Ações rápidas</h3></div>
           <div class="quick-actions">
             <button onclick="window.goDash('agenda')">Ver agenda completa →</button>
+            <button onclick="window.goDash('availability')">Ver horários disponíveis →</button>
             <button onclick="window.goDash('blocked')">Bloquear horário →</button>
             <button onclick="window.goDash('services')">Gerenciar serviços →</button>
             <button onclick="window.goDash('clients')">Ver clientes →</button>
@@ -777,6 +862,8 @@ function renderOwner() {
           </tr>`).join("")}</tbody>
         </table></div>
       </section>`;
+  } else if (state.dashView === "availability") {
+    renderAvailabilityView();
   } else if (state.dashView === "blocked") {
     $("#dashTitle").textContent = "Horários bloqueados";
     $("#dashboardContent").innerHTML = renderBlockedSlots();
@@ -900,7 +987,7 @@ function renderProfile() {
         <div class="panel-title"><h3>Informações pessoais</h3></div>
         <div class="profile-fields">
           <label>Nome<input id="profileName" value="${escapeAttr(state.profile.name || "")}"></label>
-          <label>E-mail<input value="${escapeAttr(state.user.user_metadata?.public_email || (state.profile.role === "owner" ? state.user.email : "Não informado"))}" disabled></label>
+          <label>E-mail<input value="${escapeAttr(state.user.email || "")}" disabled></label>
           <label>Telefone<input id="profilePhone" value="${escapeAttr(state.profile.phone || "")}"></label>
           <label>Tipo de conta<input value="${state.profile.role === "owner" ? "Proprietário" : "Cliente"}" disabled></label>
         </div>
