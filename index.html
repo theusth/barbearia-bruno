@@ -6,11 +6,14 @@
   <meta name="theme-color" content="#050505" />
   <meta name="description" content="Bruno Barbearia - cortes, barba e agendamentos online." />
   <title>Bruno Barbearia | Agendamento Online</title>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
+
   <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
   <div class="noise"></div>
 
@@ -19,12 +22,14 @@
       <span class="brand-mark">B</span>
       <span>BRUNO <small>BARBEARIA</small></span>
     </a>
+
     <nav class="desktop-nav">
       <a href="#inicio">Início</a>
       <a href="#servicos">Serviços</a>
       <a href="#sobre">Sobre</a>
       <a href="#contato">Contato</a>
     </nav>
+
     <div class="nav-actions">
       <button class="btn btn-ghost" id="openLogin">Entrar</button>
       <button class="btn btn-light" id="openBooking">Agendar horário</button>
@@ -35,27 +40,57 @@
     <section class="hero" id="inicio">
       <div class="hero-copy reveal">
         <span class="eyebrow">BARBEARIA PREMIUM</span>
-        <h1>Seu estilo.<br><span>Sua presença.</span></h1>
-        <p>Experiência completa em corte, barba e cuidado masculino com atendimento preciso, ambiente moderno e agendamento online.</p>
+
+        <h1>
+          Seu estilo.<br>
+          <span>Sua presença.</span>
+        </h1>
+
+        <p>
+          Experiência completa em corte, barba e cuidado masculino com
+          atendimento preciso, ambiente moderno e agendamento online.
+        </p>
+
         <div class="hero-actions">
-          <button class="btn btn-light btn-lg" id="heroBooking">Agendar agora</button>
-          <a class="btn btn-outline btn-lg" href="#servicos">Ver serviços</a>
+          <button class="btn btn-light btn-lg" id="heroBooking">
+            Agendar agora
+          </button>
+
+          <a class="btn btn-outline btn-lg" href="#servicos">
+            Ver serviços
+          </a>
         </div>
+
         <div class="hero-stats">
-          <div><strong>Online</strong><span>Agendamento rápido</span></div>
-          <div><strong>Seguro</strong><span>Login individual</span></div>
-          <div><strong>6 dias</strong><span>Por semana</span></div>
+          <div>
+            <strong>Online</strong>
+            <span>Agendamento rápido</span>
+          </div>
+
+          <div>
+            <strong>Seguro</strong>
+            <span>Login individual</span>
+          </div>
+
+          <div>
+            <strong>6 dias</strong>
+            <span>Por semana</span>
+          </div>
         </div>
       </div>
 
       <div class="hero-visual reveal">
         <div class="hero-card">
           <div class="hero-glow"></div>
+
           <div class="barber-symbol">✂</div>
+
           <div class="hero-card-content">
             <span>BRUNO BARBEARIA</span>
             <h3>Detalhe que transforma.</h3>
-            <p>Cortes clássicos e modernos, acabamento limpo e experiência premium.</p>
+            <p>
+              Cortes clássicos e modernos, acabamento limpo e experiência premium.
+            </p>
           </div>
         </div>
       </div>
@@ -65,24 +100,56 @@
       <div class="section-heading reveal">
         <span class="eyebrow">SERVIÇOS</span>
         <h2>Escolha o seu cuidado</h2>
-        <p>Os serviços e preços abaixo são carregados diretamente do banco de dados.</p>
+        <p>
+          Os serviços e preços abaixo são carregados diretamente do banco de dados.
+        </p>
       </div>
+
       <div class="services-grid" id="servicesGrid">
-        <div class="loading-card">Carregando serviços...</div>
+        <div class="loading-card">
+          Carregando serviços...
+        </div>
       </div>
     </section>
 
     <section class="section split-section" id="sobre">
       <div class="about-panel reveal">
         <span class="eyebrow">SOBRE NÓS</span>
+
         <h2>Mais que um corte, uma experiência.</h2>
-        <p>A Bruno Barbearia combina técnica, pontualidade e um ambiente sofisticado para quem valoriza presença e cuidado pessoal.</p>
+
+        <p>
+          A Bruno Barbearia combina técnica, pontualidade e um ambiente sofisticado
+          para quem valoriza presença e cuidado pessoal.
+        </p>
+
         <div class="feature-list">
-          <div><span>01</span><p><strong>Atendimento com hora marcada</strong><br>Menos espera, mais conforto.</p></div>
-          <div><span>02</span><p><strong>Profissionais especializados</strong><br>Acabamento pensado para seu estilo.</p></div>
-          <div><span>03</span><p><strong>Ambiente premium</strong><br>Conforto e experiência completa.</p></div>
+          <div>
+            <span>01</span>
+            <p>
+              <strong>Atendimento com hora marcada</strong><br>
+              Menos espera, mais conforto.
+            </p>
+          </div>
+
+          <div>
+            <span>02</span>
+            <p>
+              <strong>Profissionais especializados</strong><br>
+              Acabamento pensado para seu estilo.
+            </p>
+          </div>
+
+          <div>
+            <span>03</span>
+            <p>
+              <strong>Ambiente premium</strong><br>
+              Conforto e experiência completa.
+            </p>
+          </div>
         </div>
       </div>
+
       <div class="quote-card reveal">
         <span>“</span>
         <p>O melhor corte é aquele que combina com você.</p>
@@ -94,14 +161,33 @@
       <div class="contact-card reveal">
         <div>
           <span class="eyebrow">CONTATO</span>
+
           <h2>Pronto para renovar o visual?</h2>
-          <p>Crie sua conta e acompanhe todos os seus horários pelo painel do cliente.</p>
+
+          <p>
+            Crie sua conta e acompanhe todos os seus horários pelo painel do cliente.
+          </p>
         </div>
+
         <div class="contact-info">
-          <p><span>Horário</span><b id="publicHours">Seg–Sáb • 09:00 às 20:00</b></p>
-          <p><span>Telefone</span><b id="publicPhone">(00) 99999-9999</b></p>
-          <p><span>Endereço</span><b id="publicAddress">Rua da Barbearia, 100 • Centro</b></p>
-          <button class="btn btn-light btn-lg" id="contactBooking">Agendar horário</button>
+          <p>
+            <span>Horário</span>
+            <b id="publicHours">Seg–Sáb • 09:00 às 20:00</b>
+          </p>
+
+          <p>
+            <span>Telefone</span>
+            <b id="publicPhone">(00) 99999-9999</b>
+          </p>
+
+          <p>
+            <span>Endereço</span>
+            <b id="publicAddress">Rua da Barbearia, 100 • Centro</b>
+          </p>
+
+          <button class="btn btn-light btn-lg" id="contactBooking">
+            Agendar horário
+          </button>
         </div>
       </div>
     </section>
@@ -113,99 +199,328 @@
         <span class="brand-mark">B</span>
         <span>BRUNO <small>BARBEARIA</small></span>
       </div>
+
       <div class="user-box">
         <div class="avatar" id="sideAvatar">B</div>
-        <div><strong id="sideName">Usuário</strong><span id="sideRole">Cliente</span></div>
+
+        <div>
+          <strong id="sideName">Usuário</strong>
+          <span id="sideRole">Cliente</span>
+        </div>
       </div>
+
       <nav id="dashboardNav"></nav>
-      <button class="btn btn-ghost logout-btn" id="logoutBtn">Sair da conta</button>
+
+      <button class="btn btn-ghost logout-btn" id="logoutBtn">
+        Sair da conta
+      </button>
     </aside>
 
     <div class="dashboard-main">
       <div class="mobile-dashboard-top">
-        <div class="brand"><span class="brand-mark">B</span><span>BRUNO <small>BARBEARIA</small></span></div>
-        <button class="icon-btn" id="mobileMenuBtn">☰</button>
+        <div class="brand">
+          <span class="brand-mark">B</span>
+          <span>BRUNO <small>BARBEARIA</small></span>
+        </div>
+
+        <button class="icon-btn" id="mobileMenuBtn">
+          ☰
+        </button>
       </div>
+
       <header class="dashboard-header">
         <div>
           <p class="eyebrow" id="dashEyebrow">PAINEL</p>
           <h2 id="dashTitle">Visão geral</h2>
         </div>
+
         <div class="header-date" id="headerDate"></div>
       </header>
-      <div id="dashboardContent"><div class="loading-card">Carregando...</div></div>
+
+      <div id="dashboardContent">
+        <div class="loading-card">
+          Carregando...
+        </div>
+      </div>
     </div>
   </section>
 
+  <!-- LOGIN / CADASTRO -->
   <div class="modal-backdrop hidden" id="authModal">
     <div class="modal">
-      <button class="close-modal" data-close="authModal">×</button>
-      <span class="eyebrow">ÁREA RESTRITA</span>
+      <button class="close-modal" data-close="authModal">
+        ×
+      </button>
+
+      <span class="eyebrow">
+        ÁREA RESTRITA
+      </span>
+
       <h2>Entrar na sua conta</h2>
-      <p class="modal-subtitle">Entre com seu e-mail ou telefone e sua senha.</p>
+
+      <p class="modal-subtitle">
+        Entre com seu e-mail ou telefone e sua senha.
+      </p>
 
       <div class="tab-switch">
-        <button class="active" data-auth-tab="login">Entrar</button>
-        <button data-auth-tab="register">Criar conta</button>
+        <button class="active" data-auth-tab="login">
+          Entrar
+        </button>
+
+        <button data-auth-tab="register">
+          Criar conta
+        </button>
       </div>
 
+      <!-- LOGIN -->
       <form id="loginForm">
-        <label>E-mail ou telefone<input type="text" id="loginEmail" autocomplete="username" placeholder="email@exemplo.com ou (00) 99999-9999" required></label>
-        <label>Senha<input type="password" id="loginPassword" autocomplete="current-password" placeholder="••••••••" required></label>
-        <button class="btn btn-light btn-full" type="submit">Entrar</button>
+        <label>
+          E-mail ou telefone
+
+          <input
+            type="text"
+            id="loginEmail"
+            autocomplete="username"
+            placeholder="email@exemplo.com ou (00) 99999-9999"
+            required
+          >
+        </label>
+
+        <label>
+          Senha
+
+          <input
+            type="password"
+            id="loginPassword"
+            autocomplete="current-password"
+            placeholder="••••••••"
+            required
+          >
+        </label>
+
+        <button
+          class="btn btn-light btn-full"
+          type="submit"
+        >
+          Entrar
+        </button>
       </form>
 
-      <form id="registerForm" class="hidden">
-        <label>Nome completo<input type="text" id="registerName" autocomplete="name" placeholder="Seu nome" required></label>
-        <label>E-mail <span style="font-weight:400;color:#666">(opcional)</span><input type="email" id="registerEmail" autocomplete="email" placeholder="voce@email.com"></label>
-        <label>Telefone<input type="tel" id="registerPhone" autocomplete="tel" placeholder="(00) 99999-9999" required></label>
-        <label>Senha<input type="password" id="registerPassword" autocomplete="new-password" minlength="6" placeholder="Mínimo 6 caracteres" required></label>
-        <button class="btn btn-light btn-full" type="submit">Criar minha conta</button>
+      <!-- CADASTRO -->
+      <form id="registerForm" class="hidden" novalidate>
+        <label>
+          Nome completo
+
+          <input
+            type="text"
+            id="registerName"
+            autocomplete="name"
+            placeholder="Seu nome"
+            required
+          >
+        </label>
+
+        <label>
+          E-mail
+          <span style="font-weight:400;color:#666">
+            (opcional)
+          </span>
+
+          <input
+            type="text"
+            id="registerEmail"
+            inputmode="email"
+            autocomplete="email"
+            placeholder="voce@email.com"
+          >
+        </label>
+
+        <label>
+          Telefone
+
+          <input
+            type="tel"
+            id="registerPhone"
+            autocomplete="tel"
+            inputmode="tel"
+            placeholder="(00) 99999-9999"
+            required
+          >
+        </label>
+
+        <label>
+          Senha
+
+          <input
+            type="password"
+            id="registerPassword"
+            autocomplete="new-password"
+            minlength="6"
+            placeholder="Mínimo 6 caracteres"
+            required
+          >
+        </label>
+
+        <button
+          class="btn btn-light btn-full"
+          type="submit"
+        >
+          Criar minha conta
+        </button>
       </form>
     </div>
   </div>
 
+  <!-- AGENDAMENTO -->
   <div class="modal-backdrop hidden" id="bookingModal">
     <div class="modal modal-lg">
-      <button class="close-modal" data-close="bookingModal">×</button>
-      <span class="eyebrow">AGENDAMENTO</span>
+      <button class="close-modal" data-close="bookingModal">
+        ×
+      </button>
+
+      <span class="eyebrow">
+        AGENDAMENTO
+      </span>
+
       <h2>Reserve seu horário</h2>
-      <p class="modal-subtitle">Escolha o serviço, a data e um horário disponível.</p>
+
+      <p class="modal-subtitle">
+        Escolha o serviço, a data e um horário disponível.
+      </p>
+
       <form id="bookingForm">
         <div class="form-grid">
-          <label>Serviço<select id="bookingService" required></select></label>
-          <label>Data<input type="date" id="bookingDate" required></label>
+          <label>
+            Serviço
+
+            <select id="bookingService" required></select>
+          </label>
+
+          <label>
+            Data
+
+            <input
+              type="date"
+              id="bookingDate"
+              required
+            >
+          </label>
         </div>
-        <label>Horário<div class="time-grid" id="timeGrid"></div></label>
-        <div class="booking-summary" id="bookingSummary"></div>
-        <button class="btn btn-light btn-full" type="submit">Confirmar agendamento</button>
+
+        <label>
+          Horário
+
+          <div
+            class="time-grid"
+            id="timeGrid"
+          ></div>
+        </label>
+
+        <div
+          class="booking-summary"
+          id="bookingSummary"
+        ></div>
+
+        <button
+          class="btn btn-light btn-full"
+          type="submit"
+        >
+          Confirmar agendamento
+        </button>
       </form>
     </div>
   </div>
 
+  <!-- SERVIÇOS - PROPRIETÁRIO -->
   <div class="modal-backdrop hidden" id="serviceModal">
     <div class="modal">
-      <button class="close-modal" data-close="serviceModal">×</button>
-      <span class="eyebrow">PROPRIETÁRIO</span>
-      <h2 id="serviceModalTitle">Novo serviço</h2>
+      <button class="close-modal" data-close="serviceModal">
+        ×
+      </button>
+
+      <span class="eyebrow">
+        PROPRIETÁRIO
+      </span>
+
+      <h2 id="serviceModalTitle">
+        Novo serviço
+      </h2>
+
       <form id="serviceForm">
-        <input type="hidden" id="serviceId">
-        <label>Nome<input id="serviceName" required></label>
-        <label>Descrição<textarea id="serviceDescription" rows="4" required></textarea></label>
+        <input
+          type="hidden"
+          id="serviceId"
+        >
+
+        <label>
+          Nome
+
+          <input
+            id="serviceName"
+            required
+          >
+        </label>
+
+        <label>
+          Descrição
+
+          <textarea
+            id="serviceDescription"
+            rows="4"
+            required
+          ></textarea>
+        </label>
+
         <div class="form-grid">
-          <label>Preço (R$)<input type="number" id="servicePrice" min="0" step="0.01" required></label>
-          <label>Duração (min)<input type="number" id="serviceDuration" min="5" step="5" required></label>
+          <label>
+            Preço (R$)
+
+            <input
+              type="number"
+              id="servicePrice"
+              min="0"
+              step="0.01"
+              required
+            >
+          </label>
+
+          <label>
+            Duração (min)
+
+            <input
+              type="number"
+              id="serviceDuration"
+              min="5"
+              step="5"
+              required
+            >
+          </label>
         </div>
-        <button class="btn btn-light btn-full" type="submit">Salvar serviço</button>
+
+        <button
+          class="btn btn-light btn-full"
+          type="submit"
+        >
+          Salvar serviço
+        </button>
       </form>
     </div>
   </div>
 
-  <div class="toast" id="toast"></div>
+  <div
+    class="toast"
+    id="toast"
+  ></div>
 
   <footer id="footer">
-    <div class="brand"><span class="brand-mark">B</span><span>BRUNO <small>BARBEARIA</small></span></div>
-    <p>© 2026 Bruno Barbearia. Todos os direitos reservados.</p>
+    <div class="brand">
+      <span class="brand-mark">B</span>
+      <span>BRUNO <small>BARBEARIA</small></span>
+    </div>
+
+    <p>
+      © 2026 Bruno Barbearia. Todos os direitos reservados.
+    </p>
   </footer>
 
   <script type="module" src="app.js"></script>
