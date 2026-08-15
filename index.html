@@ -142,7 +142,7 @@
       <button class="close-modal" data-close="authModal">×</button>
       <span class="eyebrow">ÁREA RESTRITA</span>
       <h2>Entrar na sua conta</h2>
-      <p class="modal-subtitle">Use seu e-mail e senha para acessar o painel.</p>
+      <p class="modal-subtitle">Entre com seu e-mail ou telefone e sua senha.</p>
 
       <div class="tab-switch">
         <button class="active" data-auth-tab="login">Entrar</button>
@@ -150,14 +150,14 @@
       </div>
 
       <form id="loginForm">
-        <label>E-mail<input type="email" id="loginEmail" autocomplete="email" placeholder="voce@email.com" required></label>
+        <label>E-mail ou telefone<input type="text" id="loginEmail" autocomplete="username" placeholder="email@exemplo.com ou (00) 99999-9999" required></label>
         <label>Senha<input type="password" id="loginPassword" autocomplete="current-password" placeholder="••••••••" required></label>
         <button class="btn btn-light btn-full" type="submit">Entrar</button>
       </form>
 
       <form id="registerForm" class="hidden">
         <label>Nome completo<input type="text" id="registerName" autocomplete="name" placeholder="Seu nome" required></label>
-        <label>E-mail<input type="email" id="registerEmail" autocomplete="email" placeholder="voce@email.com" required></label>
+        <label>E-mail <span style="font-weight:400;color:#666">(opcional)</span><input type="email" id="registerEmail" autocomplete="email" placeholder="voce@email.com"></label>
         <label>Telefone<input type="tel" id="registerPhone" autocomplete="tel" placeholder="(00) 99999-9999" required></label>
         <label>Senha<input type="password" id="registerPassword" autocomplete="new-password" minlength="6" placeholder="Mínimo 6 caracteres" required></label>
         <button class="btn btn-light btn-full" type="submit">Criar minha conta</button>
