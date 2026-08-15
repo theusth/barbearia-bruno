@@ -512,37 +512,46 @@ function isEmail(value) {
   return String(value || "").includes("@");
 }
 
+function internalEmailFromPhone(phone) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  return `cliente.${digits}@brunobarbearia.local`;
+}
+
 async function login(identifier, password) {
   const value = String(identifier || "").trim();
 
-  let credentials;
+  let email;
 
   if (isEmail(value)) {
-    credentials = {
-      email: value.toLowerCase(),
-      password
-    };
+    email = value.toLowerCase();
   } else {
     const phone = normalizePhoneBR(value);
 
     if (!phone) {
-      return showToast("Digite um e-mail ou telefone válido.", true);
+      return showToast("Digite um telefone válido com DDD.", true);
     }
 
-    credentials = {
-      phone,
-      password
-    };
+    email = internalEmailFromPhone(phone);
   }
 
-  const { data, error } = await supabase.auth.signInWithPassword(credentials);
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password
+  });
 
   if (error) {
-    return showToast("E-mail/telefone ou senha incorretos.", true);
+    console.error(error);
+    return showToast("Telefone/e-mail ou senha incorretos.", true);
   }
 
   state.user = data.user;
-  await Promise.all([loadProfile(), loadServices(), loadBusinessSettings()]);
+
+  await Promise.all([
+    loadProfile(),
+    loadServices(),
+    loadBusinessSettings()
+  ]);
+
   await loadAppointments();
 
   if (state.profile?.role === "owner") {
@@ -558,68 +567,74 @@ async function login(identifier, password) {
 }
 
 async function register(name, email, phone, password) {
+  const cleanName = String(name || "").trim();
   const cleanEmail = String(email || "").trim().toLowerCase();
   const normalizedPhone = normalizePhoneBR(phone);
+
+  if (!cleanName) {
+    return showToast("Digite seu nome.", true);
+  }
 
   if (!normalizedPhone) {
     return showToast("Digite um telefone válido com DDD.", true);
   }
 
-  const options = {
-    data: {
-      name,
-      phone: normalizedPhone
-    }
-  };
+  if (!password || password.length < 6) {
+    return showToast("A senha precisa ter pelo menos 6 caracteres.", true);
+  }
 
-  const credentials = cleanEmail
-    ? {
-        email: cleanEmail,
-        password,
-        options
-      }
-    : {
+  const authEmail = cleanEmail || internalEmailFromPhone(normalizedPhone);
+
+  const { data, error } = await supabase.auth.signUp({
+    email: authEmail,
+    password,
+    options: {
+      data: {
+        name: cleanName,
         phone: normalizedPhone,
-        password,
-        options
-      };
-
-  const { data, error } = await supabase.auth.signUp(credentials);
+        public_email: cleanEmail || null,
+        uses_internal_email: !cleanEmail
+      }
+    }
+  });
 
   if (error) {
     console.error(error);
 
     const message = (error.message || "").toLowerCase();
 
-    if (message.includes("phone provider") || message.includes("phone signups")) {
-      return showToast(
-        "Cadastro sem e-mail exige o login por telefone ativado no Supabase.",
-        true
-      );
+    if (
+      message.includes("already registered") ||
+      message.includes("already been registered") ||
+      message.includes("user already registered")
+    ) {
+      return showToast("Esse telefone ou e-mail já possui uma conta.", true);
     }
 
-    if (message.includes("already registered") || message.includes("already been registered")) {
-      return showToast("Esse e-mail ou telefone já está cadastrado.", true);
+    if (message.includes("email rate limit")) {
+      return showToast("O Supabase limitou novos cadastros temporariamente. Tente novamente mais tarde.", true);
     }
 
     return showToast(error.message || "Não foi possível criar a conta.", true);
   }
 
   if (!data.session) {
-    closeModal("authModal");
-    authTab("login");
-
-    showToast(
-      cleanEmail
-        ? "Conta criada. Se a confirmação estiver ativa, confirme o e-mail para entrar."
-        : "Conta criada. Se a confirmação por telefone estiver ativa, confirme o SMS para entrar."
+    return showToast(
+      "Conta criada, mas o Supabase está exigindo confirmação de e-mail. Desative 'Confirm email' no Supabase.",
+      true
     );
-    return;
   }
 
   state.user = data.user;
-  await Promise.all([loadProfile(), loadServices(), loadBusinessSettings()]);
+
+  await Promise.all([
+    loadProfile(),
+    loadServices(),
+    loadBusinessSettings()
+  ]);
+
   await loadAppointments();
+
   closeModal("authModal");
   enterDashboard();
   showToast("Conta criada com sucesso.");
@@ -885,7 +900,7 @@ function renderProfile() {
         <div class="panel-title"><h3>Informações pessoais</h3></div>
         <div class="profile-fields">
           <label>Nome<input id="profileName" value="${escapeAttr(state.profile.name || "")}"></label>
-          <label>E-mail<input value="${escapeAttr(state.user.email || "")}" disabled></label>
+          <label>E-mail<input value="${escapeAttr(state.user.user_metadata?.public_email || (state.profile.role === "owner" ? state.user.email : "Não informado"))}" disabled></label>
           <label>Telefone<input id="profilePhone" value="${escapeAttr(state.profile.phone || "")}"></label>
           <label>Tipo de conta<input value="${state.profile.role === "owner" ? "Proprietário" : "Cliente"}" disabled></label>
         </div>
