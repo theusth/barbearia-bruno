@@ -260,9 +260,10 @@ function filterOwnerLogs() {
 
 async function loadBlockedSlots() {
   if (!state.profile || state.profile.role !== "owner") return;
+
   const { data, error } = await supabase
     .from("blocked_slots")
-    .select("id,block_date,block_time,reserved_for,client_phone,notes,created_by,created_at")
+    .select("id,block_date,block_time,reserved_for,client_phone,notes,created_by,created_at,group_id,recurrence_days,recurrence_weekday")
     .order("block_date", { ascending: true })
     .order("block_time", { ascending: true });
 
@@ -271,50 +272,56 @@ async function loadBlockedSlots() {
     showToast("Não foi possível carregar os horários bloqueados.", true);
     return;
   }
+
   state.blockedSlots = data || [];
 }
 
 async function createBlockedSlot() {
   if (state.profile?.role !== "owner") return;
 
-  const block_date = $("#blockDate")?.value;
+  const start_date = $("#blockStartDate")?.value;
+  const weekday = Number($("#blockWeekday")?.value);
   const block_time = $("#blockTime")?.value;
+  const duration_days = Number($("#blockDuration")?.value);
   const reserved_for = $("#blockClient")?.value.trim();
   const client_phone = $("#blockPhone")?.value.trim() || null;
   const notes = $("#blockNotes")?.value.trim() || null;
 
-  if (!block_date || !block_time || !reserved_for) {
-    return showToast("Preencha data, horário e nome do cliente.", true);
+  if (!start_date || Number.isNaN(weekday) || !block_time || !duration_days || !reserved_for) {
+    return showToast("Preencha início, dia da semana, horário, duração e cliente.", true);
   }
 
-  if (block_date < new Date().toISOString().slice(0,10)) {
-    return showToast("Escolha uma data de hoje em diante.", true);
-  }
-
-  const { error } = await supabase
-    .from("blocked_slots")
-    .insert({
-      block_date,
-      block_time,
-      reserved_for,
-      client_phone,
-      notes,
-      created_by: state.user.id
-    });
+  const { data, error } = await supabase.rpc("owner_create_recurring_block", {
+    p_start_date: start_date,
+    p_weekday: weekday,
+    p_time: block_time,
+    p_duration_days: duration_days,
+    p_reserved_for: reserved_for,
+    p_client_phone: client_phone,
+    p_notes: notes
+  });
 
   if (error) {
     console.error(error);
-    if (error.code === "23505") return showToast("Esse horário já está bloqueado.", true);
-    return showToast(error.message || "Não foi possível bloquear o horário.", true);
+    return showToast(error.message || "Não foi possível criar o bloqueio recorrente.", true);
   }
 
   await Promise.all([loadBlockedSlots(), loadOwnerLogs()]);
   renderDashboard();
-  showToast("Horário reservado para cliente fixo.");
+
+  const result = data || {};
+  const created = result.created ?? 0;
+  const skipped = result.skipped ?? 0;
+
+  showToast(
+    skipped
+      ? `Série criada: ${created} horários bloqueados e ${skipped} conflitos ignorados.`
+      : `Série criada com ${created} horários bloqueados.`
+  );
 }
 
 async function deleteBlockedSlot(id) {
-  if (!confirm("Liberar este horário para os clientes?")) return;
+  if (!confirm("Deseja liberar este horário?")) return;
 
   const { error } = await supabase
     .from("blocked_slots")
@@ -331,28 +338,72 @@ async function deleteBlockedSlot(id) {
   showToast("Horário liberado.");
 }
 
+
+async function deleteBlockedSeries(groupId) {
+  if (!groupId) return;
+  if (!confirm("Deseja liberar TODOS os horários desta série?")) return;
+
+  const { data, error } = await supabase.rpc("owner_delete_block_group", {
+    p_group_id: groupId
+  });
+
+  if (error) {
+    console.error(error);
+    return showToast(error.message || "Não foi possível liberar a série.", true);
+  }
+
+  await Promise.all([loadBlockedSlots(), loadOwnerLogs()]);
+  renderDashboard();
+  showToast(`${data ?? 0} horários da série foram liberados.`);
+}
+
 function renderBlockedSlots() {
   const today = new Date().toISOString().slice(0,10);
   const future = state.blockedSlots.filter(b => b.block_date >= today);
+
+  const weekdays = [
+    [1,"Segunda-feira"],
+    [2,"Terça-feira"],
+    [3,"Quarta-feira"],
+    [4,"Quinta-feira"],
+    [5,"Sexta-feira"],
+    [6,"Sábado"],
+    [0,"Domingo"]
+  ];
 
   return `
     <div class="blocked-layout">
       <section class="panel-card">
         <div class="panel-title">
           <div>
-            <h3>Bloquear novo horário</h3>
-            <span>Reserve um horário para cliente fixo</span>
+            <h3>Novo bloqueio recorrente</h3>
+            <span>Reserve o mesmo dia e horário por um período</span>
           </div>
         </div>
 
         <div class="owner-settings-grid">
-          <label>Data
-            <input id="blockDate" type="date" min="${today}" value="${today}">
+          <label>Começar a partir de
+            <input id="blockStartDate" type="date" min="${today}" value="${today}">
+          </label>
+
+          <label>Dia da semana
+            <select id="blockWeekday">
+              ${weekdays.map(([value,label]) => `<option value="${value}">${label}</option>`).join("")}
+            </select>
           </label>
 
           <label>Horário
             <select id="blockTime">
               ${TIMES.map(t => `<option value="${t}">${t}</option>`).join("")}
+            </select>
+          </label>
+
+          <label>Manter bloqueado por
+            <select id="blockDuration">
+              <option value="30">30 dias</option>
+              <option value="90">90 dias</option>
+              <option value="120">120 dias</option>
+              <option value="365">1 ano</option>
             </select>
           </label>
 
@@ -365,12 +416,12 @@ function renderBlockedSlots() {
           </label>
 
           <label style="grid-column:1/-1">Observação
-            <textarea id="blockNotes" rows="3" placeholder="Ex.: cliente mensal, corte + barba..."></textarea>
+            <textarea id="blockNotes" rows="3" placeholder="Ex.: cliente semanal, corte + barba..."></textarea>
           </label>
         </div>
 
         <button class="btn btn-light" style="margin-top:18px" onclick="window.createBlockedSlot()">
-          Bloquear horário
+          Criar série de bloqueios
         </button>
       </section>
 
@@ -386,17 +437,29 @@ function renderBlockedSlots() {
           ${future.length ? future.map(b => `
             <div class="appointment-item">
               <div class="time-chip">${String(b.block_time).slice(0,5)}</div>
+
               <div>
                 <strong>${escapeHtml(b.reserved_for)}</strong>
-                <p>${fmtDate(b.block_date)}${b.client_phone ? ` • ${escapeHtml(b.client_phone)}` : ""}${b.notes ? ` • ${escapeHtml(b.notes)}` : ""}</p>
+                <p>
+                  ${fmtDate(b.block_date)}
+                  ${b.client_phone ? ` • ${escapeHtml(b.client_phone)}` : ""}
+                  ${b.recurrence_days ? ` • série de ${b.recurrence_days === 365 ? "1 ano" : b.recurrence_days + " dias"}` : ""}
+                  ${b.notes ? ` • ${escapeHtml(b.notes)}` : ""}
+                </p>
               </div>
+
               <span class="status">Reservado</span>
-              <button class="icon-action" onclick="window.deleteBlockedSlot('${b.id}')">Liberar</button>
+
+              <div class="service-actions">
+                <button class="mini-btn" onclick="window.deleteBlockedSlot('${b.id}')">Liberar este</button>
+                ${b.group_id ? `<button class="mini-btn" onclick="window.deleteBlockedSeries('${b.group_id}')">Liberar série</button>` : ""}
+              </div>
             </div>
-          `).join("") : empty("Nenhum horário reservado","Os bloqueios feitos para clientes fixos aparecerão aqui.")}
+          `).join("") : empty("Nenhum horário bloqueado","As séries reservadas para clientes fixos aparecerão aqui.")}
         </div>
       </section>
-    </div>`;
+    </div>
+  `;
 }
 
 async function bootSession() {
@@ -794,7 +857,9 @@ async function createBooking() {
   if (error) {
     console.error(error);
     if (error.code === "23505") return showToast("Esse horário acabou de ser reservado. Escolha outro.", true);
-    if ((error.message || "").toLowerCase().includes("reservado")) return showToast("Esse horário foi reservado pelo proprietário. Escolha outro.", true);
+    if ((error.message || "").toLowerCase().includes("reservado")) {
+      return showToast("Esse horário foi bloqueado pelo proprietário. Escolha outro.", true);
+    }
     return showToast("Não foi possível confirmar o agendamento.", true);
   }
 
@@ -971,6 +1036,7 @@ window.saveBusinessSettings = saveBusinessSettings;
 window.filterOwnerLogs = filterOwnerLogs;
 window.createBlockedSlot = createBlockedSlot;
 window.deleteBlockedSlot = deleteBlockedSlot;
+window.deleteBlockedSeries = deleteBlockedSeries;
 window.goDash = async id => {
   state.dashView = id;
   if (["overview","agenda","appointments","clients"].includes(id)) await loadAppointments();
