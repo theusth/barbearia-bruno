@@ -25,6 +25,7 @@ let state = {
   business: null,
   logs: [],
   ownerStats: null,
+  blockedSlots: [],
   dashView: "overview",
   selectedTime: null
 };
@@ -221,7 +222,9 @@ function logTitle(action) {
     service_created:"Serviço criado",
     service_updated:"Serviço alterado",
     service_deleted:"Serviço removido",
-    business_settings_updated:"Dados da barbearia alterados"
+    business_settings_updated:"Dados da barbearia alterados",
+    slot_blocked:"Horário bloqueado",
+    slot_unblocked:"Horário liberado"
   };
   return map[action] || action;
 }
@@ -254,6 +257,148 @@ function filterOwnerLogs() {
   $("#logsContainer").innerHTML = renderLogList(logs);
 }
 
+
+async function loadBlockedSlots() {
+  if (!state.profile || state.profile.role !== "owner") return;
+  const { data, error } = await supabase
+    .from("blocked_slots")
+    .select("id,block_date,block_time,reserved_for,client_phone,notes,created_by,created_at")
+    .order("block_date", { ascending: true })
+    .order("block_time", { ascending: true });
+
+  if (error) {
+    console.error(error);
+    showToast("Não foi possível carregar os horários bloqueados.", true);
+    return;
+  }
+  state.blockedSlots = data || [];
+}
+
+async function createBlockedSlot() {
+  if (state.profile?.role !== "owner") return;
+
+  const block_date = $("#blockDate")?.value;
+  const block_time = $("#blockTime")?.value;
+  const reserved_for = $("#blockClient")?.value.trim();
+  const client_phone = $("#blockPhone")?.value.trim() || null;
+  const notes = $("#blockNotes")?.value.trim() || null;
+
+  if (!block_date || !block_time || !reserved_for) {
+    return showToast("Preencha data, horário e nome do cliente.", true);
+  }
+
+  if (block_date < new Date().toISOString().slice(0,10)) {
+    return showToast("Escolha uma data de hoje em diante.", true);
+  }
+
+  const { error } = await supabase
+    .from("blocked_slots")
+    .insert({
+      block_date,
+      block_time,
+      reserved_for,
+      client_phone,
+      notes,
+      created_by: state.user.id
+    });
+
+  if (error) {
+    console.error(error);
+    if (error.code === "23505") return showToast("Esse horário já está bloqueado.", true);
+    return showToast(error.message || "Não foi possível bloquear o horário.", true);
+  }
+
+  await Promise.all([loadBlockedSlots(), loadOwnerLogs()]);
+  renderDashboard();
+  showToast("Horário reservado para cliente fixo.");
+}
+
+async function deleteBlockedSlot(id) {
+  if (!confirm("Liberar este horário para os clientes?")) return;
+
+  const { error } = await supabase
+    .from("blocked_slots")
+    .delete()
+    .eq("id", id);
+
+  if (error) {
+    console.error(error);
+    return showToast(error.message || "Não foi possível liberar o horário.", true);
+  }
+
+  await Promise.all([loadBlockedSlots(), loadOwnerLogs()]);
+  renderDashboard();
+  showToast("Horário liberado.");
+}
+
+function renderBlockedSlots() {
+  const today = new Date().toISOString().slice(0,10);
+  const future = state.blockedSlots.filter(b => b.block_date >= today);
+
+  return `
+    <div class="blocked-layout">
+      <section class="panel-card">
+        <div class="panel-title">
+          <div>
+            <h3>Bloquear novo horário</h3>
+            <span>Reserve um horário para cliente fixo</span>
+          </div>
+        </div>
+
+        <div class="owner-settings-grid">
+          <label>Data
+            <input id="blockDate" type="date" min="${today}" value="${today}">
+          </label>
+
+          <label>Horário
+            <select id="blockTime">
+              ${TIMES.map(t => `<option value="${t}">${t}</option>`).join("")}
+            </select>
+          </label>
+
+          <label>Cliente fixo
+            <input id="blockClient" placeholder="Ex.: João Silva">
+          </label>
+
+          <label>Telefone
+            <input id="blockPhone" placeholder="(00) 99999-9999">
+          </label>
+
+          <label style="grid-column:1/-1">Observação
+            <textarea id="blockNotes" rows="3" placeholder="Ex.: cliente mensal, corte + barba..."></textarea>
+          </label>
+        </div>
+
+        <button class="btn btn-light" style="margin-top:18px" onclick="window.createBlockedSlot()">
+          Bloquear horário
+        </button>
+      </section>
+
+      <section class="panel-card">
+        <div class="panel-title">
+          <div>
+            <h3>Horários reservados</h3>
+            <span>${future.length} bloqueios futuros</span>
+          </div>
+        </div>
+
+        <div class="appointment-list">
+          ${future.length ? future.map(b => `
+            <div class="appointment-item">
+              <div class="time-chip">${String(b.block_time).slice(0,5)}</div>
+              <div>
+                <strong>${escapeHtml(b.reserved_for)}</strong>
+                <p>${fmtDate(b.block_date)}${b.client_phone ? ` • ${escapeHtml(b.client_phone)}` : ""}${b.notes ? ` • ${escapeHtml(b.notes)}` : ""}</p>
+              </div>
+              <span class="status">Reservado</span>
+              <button class="icon-action" onclick="window.deleteBlockedSlot('${b.id}')">Liberar</button>
+            </div>
+          `).join("") : empty("Nenhum horário reservado","Os bloqueios feitos para clientes fixos aparecerão aqui.")}
+        </div>
+      </section>
+    </div>`;
+}
+
 async function bootSession() {
   if (!CONFIGURED) {
     showConfigWarning();
@@ -264,7 +409,7 @@ async function bootSession() {
     state.user = session.user;
     await Promise.all([loadProfile(), loadServices(), loadBusinessSettings()]);
     await loadAppointments();
-    if (state.profile?.role === "owner") await Promise.all([loadOwnerLogs(), loadOwnerStats()]);
+    if (state.profile?.role === "owner") await Promise.all([loadOwnerLogs(), loadOwnerStats(), loadBlockedSlots()]);
     enterDashboard();
   } else {
     await Promise.all([loadServices(), loadBusinessSettings()]);
@@ -286,7 +431,7 @@ async function login(email, password) {
   state.user = data.user;
   await Promise.all([loadProfile(), loadServices(), loadBusinessSettings()]);
   await loadAppointments();
-  if (state.profile?.role === "owner") await Promise.all([loadOwnerLogs(), loadOwnerStats()]);
+  if (state.profile?.role === "owner") await Promise.all([loadOwnerLogs(), loadOwnerStats(), loadBlockedSlots()]);
   closeModal("authModal");
   enterDashboard();
 }
@@ -346,7 +491,7 @@ function renderDashboardNav() {
   if (!state.profile) return;
   const owner = state.profile.role === "owner";
   const items = owner
-    ? [["overview","Visão geral"],["agenda","Agenda"],["services","Serviços"],["clients","Clientes"],["business","Barbearia"],["logs","Logs"],["profile","Meu perfil"]]
+    ? [["overview","Visão geral"],["agenda","Agenda"],["blocked","Horários bloqueados"],["services","Serviços"],["clients","Clientes"],["business","Barbearia"],["logs","Logs"],["profile","Meu perfil"]]
     : [["overview","Visão geral"],["appointments","Meus horários"],["new","Novo agendamento"],["profile","Meu perfil"]];
   $("#dashboardNav").innerHTML = items.map(([id,label]) =>
     `<button class="${state.dashView===id?"active":""}" data-view="${id}">${label}</button>`
@@ -356,6 +501,7 @@ function renderDashboardNav() {
     if (["overview","agenda","appointments","clients"].includes(state.dashView)) await loadAppointments();
     if (state.profile?.role === "owner" && state.dashView === "overview") await loadOwnerStats();
     if (state.profile?.role === "owner" && state.dashView === "logs") await loadOwnerLogs();
+    if (state.profile?.role === "owner" && state.dashView === "blocked") await loadBlockedSlots();
     if (state.profile?.role === "owner" && state.dashView === "business") await loadBusinessSettings();
     renderDashboardNav();
     renderDashboard();
@@ -426,6 +572,7 @@ function renderOwner() {
           <div class="panel-title"><h3>Ações rápidas</h3></div>
           <div class="quick-actions">
             <button onclick="window.goDash('agenda')">Ver agenda completa →</button>
+            <button onclick="window.goDash('blocked')">Bloquear horário →</button>
             <button onclick="window.goDash('services')">Gerenciar serviços →</button>
             <button onclick="window.goDash('clients')">Ver clientes →</button>
           </div>
@@ -449,6 +596,9 @@ function renderOwner() {
           </tr>`).join("")}</tbody>
         </table></div>
       </section>`;
+  } else if (state.dashView === "blocked") {
+    $("#dashTitle").textContent = "Horários bloqueados";
+    $("#dashboardContent").innerHTML = renderBlockedSlots();
   } else if (state.dashView === "services") {
     $("#dashTitle").textContent = "Serviços";
     $("#dashboardContent").innerHTML = `
@@ -505,6 +655,7 @@ function renderOwner() {
               <option value="appointment">Agendamentos</option>
               <option value="service">Serviços</option>
               <option value="business_settings">Barbearia</option>
+              <option value="blocked_slot">Horários bloqueados</option>
             </select>
           </div>
         </div>
@@ -643,6 +794,7 @@ async function createBooking() {
   if (error) {
     console.error(error);
     if (error.code === "23505") return showToast("Esse horário acabou de ser reservado. Escolha outro.", true);
+    if ((error.message || "").toLowerCase().includes("reservado")) return showToast("Esse horário foi reservado pelo proprietário. Escolha outro.", true);
     return showToast("Não foi possível confirmar o agendamento.", true);
   }
 
@@ -817,11 +969,14 @@ window.toggleService = toggleService;
 window.saveProfile = saveProfile;
 window.saveBusinessSettings = saveBusinessSettings;
 window.filterOwnerLogs = filterOwnerLogs;
+window.createBlockedSlot = createBlockedSlot;
+window.deleteBlockedSlot = deleteBlockedSlot;
 window.goDash = async id => {
   state.dashView = id;
   if (["overview","agenda","appointments","clients"].includes(id)) await loadAppointments();
   if (state.profile?.role === "owner" && id === "overview") await loadOwnerStats();
   if (state.profile?.role === "owner" && id === "logs") await loadOwnerLogs();
+  if (state.profile?.role === "owner" && id === "blocked") await loadBlockedSlots();
   if (state.profile?.role === "owner" && id === "business") await loadBusinessSettings();
   renderDashboardNav();
   renderDashboard();
