@@ -9,7 +9,43 @@ const CONFIGURED =
 
 const supabase = CONFIGURED ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
-const TIMES = ["09:00","10:00","11:00","12:00","14:00","15:00","16:00","17:00","18:00","19:00"];
+const WEEKDAY_TIMES = [
+  "08:00","08:40","09:20","10:00","10:40","11:20",
+  "12:00","12:40","13:20","14:00","14:40","15:20",
+  "16:00","16:40","17:20","18:00","18:40","19:20"
+];
+
+const SATURDAY_TIMES = [
+  "08:00","08:40","09:20","10:00","10:40","11:20",
+  "12:00","12:40","13:20","14:00","14:40","15:20",
+  "16:00","16:40"
+];
+
+const TIMES = WEEKDAY_TIMES;
+
+function getTimesForWeekday(weekday) {
+  if (Number(weekday) === 0) return [];
+  if (Number(weekday) === 6) return SATURDAY_TIMES;
+  return WEEKDAY_TIMES;
+}
+
+function getTimesForDate(dateString) {
+  if (!dateString) return WEEKDAY_TIMES;
+  const date = new Date(`${dateString}T12:00:00`);
+  return getTimesForWeekday(date.getDay());
+}
+
+function refreshBlockTimes() {
+  const weekday = Number($("#blockWeekday")?.value ?? 1);
+  const select = $("#blockTime");
+  if (!select) return;
+
+  const times = getTimesForWeekday(weekday);
+
+  select.innerHTML = times.length
+    ? times.map(t => `<option value="${t}">${t}</option>`).join("")
+    : `<option value="">Fechado</option>`;
+}
 const STATUS_LABELS = {
   confirmed: "Confirmado",
   completed: "Concluído",
@@ -292,6 +328,14 @@ async function createBlockedSlot() {
     return showToast("Preencha início, dia da semana, horário, duração e cliente.", true);
   }
 
+  if (weekday === 0) {
+    return showToast("A barbearia fica fechada aos domingos.", true);
+  }
+
+  if (!getTimesForWeekday(weekday).includes(block_time)) {
+    return showToast("Esse horário não existe para o dia escolhido.", true);
+  }
+
   const { data, error } = await supabase.rpc("owner_create_recurring_block", {
     p_start_date: start_date,
     p_weekday: weekday,
@@ -396,7 +440,7 @@ function renderBlockedSlots() {
 
           <label>Horário
             <select id="blockTime">
-              ${TIMES.map(t => `<option value="${t}">${t}</option>`).join("")}
+              ${getTimesForWeekday(1).map(t => `<option value="${t}">${t}</option>`).join("")}
             </select>
           </label>
 
@@ -699,14 +743,21 @@ async function renderOwnerAvailability(date) {
 
   const busyTimes = new Set(await loadOwnerAvailability(date));
 
-  const freeCount = TIMES.filter(time => !busyTimes.has(time)).length;
-  const busyCount = TIMES.length - freeCount;
+  const dayTimes = getTimesForDate(date);
+
+  if (!dayTimes.length) {
+    container.innerHTML = `<section class="panel-card"><div class="empty-state"><strong>Barbearia fechada</strong>Não há horários disponíveis neste dia.</div></section>`;
+    return;
+  }
+
+  const freeCount = dayTimes.filter(time => !busyTimes.has(time)).length;
+  const busyCount = dayTimes.length - freeCount;
 
   container.innerHTML = `
     <div class="dash-grid" style="margin-bottom:18px">
       ${metric("Horários livres", freeCount, "Disponíveis para agendamento")}
       ${metric("Ocupados / bloqueados", busyCount, "Indisponíveis")}
-      ${metric("Total do dia", TIMES.length, "Horários configurados")}
+      ${metric("Total do dia", dayTimes.length, "Horários configurados")}
     </div>
 
     <section class="panel-card">
@@ -718,7 +769,7 @@ async function renderOwnerAvailability(date) {
       </div>
 
       <div class="availability-grid">
-        ${TIMES.map(time => {
+        ${dayTimes.map(time => {
           const busy = busyTimes.has(time);
 
           return `
@@ -887,6 +938,12 @@ function renderOwner() {
   } else if (state.dashView === "blocked") {
     $("#dashTitle").textContent = "Horários bloqueados";
     $("#dashboardContent").innerHTML = renderBlockedSlots();
+
+    const blockWeekdaySelect = $("#blockWeekday");
+    if (blockWeekdaySelect) {
+      blockWeekdaySelect.onchange = refreshBlockTimes;
+      refreshBlockTimes();
+    }
   } else if (state.dashView === "services") {
     $("#dashTitle").textContent = "Serviços";
     $("#dashboardContent").innerHTML = `
@@ -1048,7 +1105,14 @@ async function renderTimes() {
     return;
   }
   const busy = new Set((data || []).map(a => String(a.appointment_time).slice(0,5)));
-  $("#timeGrid").innerHTML = TIMES.map(t => `
+  const dayTimes = getTimesForDate(date);
+
+  if (!dayTimes.length) {
+    $("#timeGrid").innerHTML = `<div class="loading-card" style="grid-column:1/-1">Fechado neste dia.</div>`;
+    return;
+  }
+
+  $("#timeGrid").innerHTML = dayTimes.map(t => `
     <button type="button" class="time-btn ${state.selectedTime===t?"selected":""}" ${busy.has(t)?"disabled":""} data-time="${t}">
       ${busy.has(t) ? "Ocupado" : t}
     </button>`).join("");
