@@ -1,0 +1,52 @@
+BRUNO BARBEARIA - PACOTE FINAL ATUALIZADO
+
+INCLUÍDO:
+- Painel do cliente
+- Painel do proprietário
+- Agenda
+- Horários disponíveis
+- Horários bloqueados
+- Bloqueio toda semana
+- Bloqueio SEMANA SIM, SEMANA NÃO
+- Duração: 30 dias, 90 dias, 120 dias ou 1 ano
+- Serviços editáveis
+- Clientes
+- Logs
+- Dados da barbearia
+- Cadastro com e-mail opcional
+- Cliente pode usar telefone + senha sem Twilio
+- Proprietário pode usar e-mail + senha
+
+PARA ATUALIZAR:
+
+1. GITHUB
+Substitua todos os arquivos pelos deste pacote ou, no mínimo:
+- app.js
+- style.css
+- index.html
+
+2. SUPABASE
+Se seu banco já existe, execute:
+UPDATE_SEMANA_ALTERNADA.sql
+
+Se ainda faltam outras atualizações anteriores, use:
+UPDATE_TUDO_SUPABASE.sql
+
+3. AUTENTICAÇÃO
+Authentication > Providers > Email:
+- Email Provider: ON
+- Confirm email: OFF
+- Não precisa ativar Phone/Twilio.
+
+4. VERCEL
+Após o commit no GitHub, aguarde o novo deploy.
+
+
+NOVA GRADE DE HORÁRIOS
+- Segunda a sexta: 08:00, 08:40, 09:20 ... até 19:20.
+- Sábado: 08:00, 08:40, 09:20 ... até 16:40.
+- Domingo: fechado.
+- Intervalos de 40 minutos.
+
+NO SUPABASE:
+Execute UPDATE_HORARIOS_40_MIN.sql.
