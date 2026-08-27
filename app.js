@@ -62,6 +62,7 @@ let state = {
   logs: [],
   ownerStats: null,
   blockedSlots: [],
+  manualSelectedTime: null,
   dashView: "overview",
   selectedTime: null
 };
@@ -171,7 +172,7 @@ async function loadAppointments() {
     .from("appointments")
     .select(`
       id, client_id, service_id, appointment_date, appointment_time,
-      status, notes, created_at,
+      status, notes, created_at, manual_client_name, manual_client_phone, created_by_owner,
       services ( id, name, price, duration_minutes ),
       profiles ( id, name, phone )
     `)
@@ -253,6 +254,7 @@ async function saveBusinessSettings() {
 function logTitle(action) {
   const map = {
     appointment_created:"Novo agendamento",
+    manual_appointment_created:"Agendamento feito pelo proprietário",
     appointment_cancelled:"Agendamento cancelado",
     appointment_status_changed:"Status alterado",
     service_created:"Serviço criado",
@@ -823,11 +825,256 @@ function renderAvailabilityView() {
 }
 
 
+
+async function renderManualBookingTimes() {
+  const date = $("#manualBookingDate")?.value;
+  const container = $("#manualTimeGrid");
+
+  if (!date || !container) return;
+
+  state.manualSelectedTime = null;
+
+  const dayTimes = getTimesForDate(date);
+
+  if (!dayTimes.length) {
+    container.innerHTML = `<div class="loading-card" style="grid-column:1/-1">Barbearia fechada neste dia.</div>`;
+    return;
+  }
+
+  const { data, error } = await supabase
+    .rpc("get_booked_times", { p_date: date });
+
+  if (error) {
+    console.error(error);
+    container.innerHTML = `<div class="loading-card" style="grid-column:1/-1">Não foi possível consultar os horários.</div>`;
+    return;
+  }
+
+  const busy = new Set(
+    (data || []).map(item => String(item.appointment_time).slice(0,5))
+  );
+
+  container.innerHTML = dayTimes.map(time => `
+    <button
+      type="button"
+      class="time-btn"
+      ${busy.has(time) ? "disabled" : ""}
+      data-manual-time="${time}"
+    >
+      ${busy.has(time) ? "Ocupado" : time}
+    </button>
+  `).join("");
+
+  $$("#manualTimeGrid .time-btn:not([disabled])").forEach(btn => {
+    btn.onclick = () => {
+      state.manualSelectedTime = btn.dataset.manualTime;
+
+      $$("#manualTimeGrid .time-btn").forEach(item =>
+        item.classList.toggle(
+          "selected",
+          item.dataset.manualTime === state.manualSelectedTime
+        )
+      );
+
+      updateManualBookingSummary();
+    };
+  });
+
+  updateManualBookingSummary();
+}
+
+function updateManualBookingSummary() {
+  const service = serviceById($("#manualService")?.value);
+  const summary = $("#manualBookingSummary");
+
+  if (!summary) return;
+
+  summary.innerHTML = `
+    <span>
+      ${service ? escapeHtml(service.name) : "Serviço"}
+      ${state.manualSelectedTime ? ` • ${state.manualSelectedTime}` : ""}
+    </span>
+    <strong>${service ? money(service.price) : ""}</strong>
+  `;
+}
+
+async function createManualBooking() {
+  if (state.profile?.role !== "owner") return;
+
+  const clientName = $("#manualClientName")?.value.trim();
+  const clientPhone = $("#manualClientPhone")?.value.trim() || null;
+  const serviceId = Number($("#manualService")?.value);
+  const date = $("#manualBookingDate")?.value;
+  const time = state.manualSelectedTime;
+  const notes = $("#manualBookingNotes")?.value.trim() || null;
+
+  if (!clientName) {
+    return showToast("Digite o nome da pessoa.", true);
+  }
+
+  if (!serviceId || !date || !time) {
+    return showToast("Escolha serviço, data e horário.", true);
+  }
+
+  const { data, error } = await supabase.rpc(
+    "owner_create_manual_appointment",
+    {
+      p_client_name: clientName,
+      p_client_phone: clientPhone,
+      p_service_id: serviceId,
+      p_date: date,
+      p_time: time,
+      p_notes: notes
+    }
+  );
+
+  if (error) {
+    console.error(error);
+
+    if (error.code === "23505") {
+      return showToast("Esse horário acabou de ser ocupado.", true);
+    }
+
+    return showToast(
+      error.message || "Não foi possível marcar o horário.",
+      true
+    );
+  }
+
+  state.manualSelectedTime = null;
+
+  await Promise.all([
+    loadAppointments(),
+    loadOwnerLogs(),
+    loadOwnerStats()
+  ]);
+
+  showToast("Horário marcado pelo proprietário.");
+  renderManualBookingView();
+}
+
+function renderManualBookingView() {
+  const today = new Date().toISOString().slice(0,10);
+  const services = state.services.filter(s => s.active);
+
+  $("#dashTitle").textContent = "Marcar horário";
+
+  $("#dashboardContent").innerHTML = `
+    <div class="panel-grid">
+      <section class="panel-card">
+        <div class="panel-title">
+          <div>
+            <h3>Agendamento pelo proprietário</h3>
+            <span>Para clientes sem celular, conta ou acesso ao site</span>
+          </div>
+        </div>
+
+        <div class="owner-settings-grid">
+          <label>Nome da pessoa
+            <input
+              id="manualClientName"
+              placeholder="Ex.: José da Silva"
+            >
+          </label>
+
+          <label>Telefone <span style="font-weight:400;color:#666">(opcional)</span>
+            <input
+              id="manualClientPhone"
+              placeholder="(00) 99999-9999"
+            >
+          </label>
+
+          <label>Serviço
+            <select id="manualService">
+              ${services.map(s => `
+                <option value="${s.id}">
+                  ${escapeHtml(s.name)} — ${money(s.price)}
+                </option>
+              `).join("")}
+            </select>
+          </label>
+
+          <label>Data
+            <input
+              type="date"
+              id="manualBookingDate"
+              min="${today}"
+              value="${today}"
+            >
+          </label>
+
+          <label style="grid-column:1/-1">Observação <span style="font-weight:400;color:#666">(opcional)</span>
+            <textarea
+              id="manualBookingNotes"
+              rows="3"
+              placeholder="Ex.: cliente passou pessoalmente na barbearia"
+            ></textarea>
+          </label>
+        </div>
+
+        <div style="margin-top:20px">
+          <label>Horário
+            <div class="time-grid" id="manualTimeGrid"></div>
+          </label>
+        </div>
+
+        <div
+          class="booking-summary"
+          id="manualBookingSummary"
+          style="margin-top:18px"
+        ></div>
+
+        <button
+          class="btn btn-light btn-full"
+          style="margin-top:16px"
+          onclick="window.createManualBooking()"
+        >
+          Confirmar horário
+        </button>
+      </section>
+
+      <section class="panel-card">
+        <div class="panel-title">
+          <div>
+            <h3>Como funciona</h3>
+            <span>Agendamento direto na agenda</span>
+          </div>
+        </div>
+
+        <div class="feature-list">
+          <div>
+            <span>01</span>
+            <p><strong>Sem conta</strong><br>A pessoa não precisa criar login.</p>
+          </div>
+          <div>
+            <span>02</span>
+            <p><strong>Telefone opcional</strong><br>Pode marcar até para quem não possui celular.</p>
+          </div>
+          <div>
+            <span>03</span>
+            <p><strong>Horário fica ocupado</strong><br>Os clientes do site não conseguem marcar no mesmo horário.</p>
+          </div>
+        </div>
+      </section>
+    </div>
+  `;
+
+  const dateInput = $("#manualBookingDate");
+  const serviceInput = $("#manualService");
+
+  dateInput.onchange = renderManualBookingTimes;
+  serviceInput.onchange = updateManualBookingSummary;
+
+  renderManualBookingTimes();
+  updateManualBookingSummary();
+}
+
+
 function renderDashboardNav() {
   if (!state.profile) return;
   const owner = state.profile.role === "owner";
   const items = owner
-    ? [["overview","Visão geral"],["agenda","Agenda"],["availability","Horários disponíveis"],["blocked","Horários bloqueados"],["services","Serviços"],["clients","Clientes"],["business","Barbearia"],["logs","Logs"],["profile","Meu perfil"]]
+    ? [["overview","Visão geral"],["agenda","Agenda"],["manual","Marcar horário"],["availability","Horários disponíveis"],["blocked","Horários bloqueados"],["services","Serviços"],["clients","Clientes"],["business","Barbearia"],["logs","Logs"],["profile","Meu perfil"]]
     : [["overview","Visão geral"],["appointments","Meus horários"],["new","Novo agendamento"],["profile","Meu perfil"]];
   $("#dashboardNav").innerHTML = items.map(([id,label]) =>
     `<button class="${state.dashView===id?"active":""}" data-view="${id}">${label}</button>`
@@ -851,7 +1098,7 @@ function metric(label, value, small="") {
 
 function appointmentItem(a, owner=false) {
   const service = a.services || serviceById(a.service_id);
-  const clientName = a.profiles?.name || "Cliente";
+  const clientName = a.profiles?.name || a.manual_client_name || "Cliente";
   const status = STATUS_LABELS[a.status] || a.status;
   return `<div class="appointment-item">
     <div class="time-chip">${String(a.appointment_time).slice(0,5)}</div>
@@ -908,6 +1155,7 @@ function renderOwner() {
           <div class="panel-title"><h3>Ações rápidas</h3></div>
           <div class="quick-actions">
             <button onclick="window.goDash('agenda')">Ver agenda completa →</button>
+            <button onclick="window.goDash('manual')">+ Marcar para cliente →</button>
             <button onclick="window.goDash('availability')">Ver horários disponíveis →</button>
             <button onclick="window.goDash('blocked')">Bloquear horário →</button>
             <button onclick="window.goDash('services')">Gerenciar serviços →</button>
@@ -925,7 +1173,10 @@ function renderOwner() {
           <tbody>${all.map(a=>`<tr>
             <td>${fmtDate(a.appointment_date)}</td>
             <td>${String(a.appointment_time).slice(0,5)}</td>
-            <td>${escapeHtml(a.profiles?.name || "Cliente")}</td>
+            <td>
+              ${escapeHtml(a.profiles?.name || a.manual_client_name || "Cliente")}
+              ${a.manual_client_name ? `<br><small style="color:#666">Agendado pelo proprietário${a.manual_client_phone ? ` • ${escapeHtml(a.manual_client_phone)}` : ""}</small>` : ""}
+            </td>
             <td>${escapeHtml(a.services?.name || "Serviço")}</td>
             <td>${money(a.services?.price)}</td>
             <td>${STATUS_LABELS[a.status] || a.status}</td>
@@ -933,6 +1184,8 @@ function renderOwner() {
           </tr>`).join("")}</tbody>
         </table></div>
       </section>`;
+  } else if (state.dashView === "manual") {
+    renderManualBookingView();
   } else if (state.dashView === "availability") {
     renderAvailabilityView();
   } else if (state.dashView === "blocked") {
@@ -954,7 +1207,7 @@ function renderOwner() {
   } else if (state.dashView === "clients") {
     $("#dashTitle").textContent = "Clientes";
     const clients = new Map();
-    all.forEach(a => {
+    all.filter(a => a.client_id).forEach(a => {
       if (!clients.has(a.client_id)) clients.set(a.client_id, {
         id:a.client_id,
         name:a.profiles?.name || "Cliente",
@@ -1326,6 +1579,7 @@ window.filterOwnerLogs = filterOwnerLogs;
 window.createBlockedSlot = createBlockedSlot;
 window.deleteBlockedSlot = deleteBlockedSlot;
 window.deleteBlockedSeries = deleteBlockedSeries;
+window.createManualBooking = createManualBooking;
 window.goDash = async id => {
   state.dashView = id;
   if (["overview","agenda","appointments","clients"].includes(id)) await loadAppointments();
