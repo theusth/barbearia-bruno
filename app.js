@@ -847,33 +847,100 @@ async function renderManualBookingTimes() {
   const dayTimes = getTimesForDate(date);
 
   if (!dayTimes.length) {
-    container.innerHTML = `<div class="loading-card" style="grid-column:1/-1">Barbearia fechada neste dia.</div>`;
+    container.innerHTML = `
+      <div class="loading-card" style="grid-column:1/-1">
+        Barbearia fechada neste dia.
+      </div>`;
     return;
   }
 
-  const { data, error } = await supabase
-    .rpc("get_booked_times", { p_date: date });
+  container.innerHTML = `
+    <div class="loading-card" style="grid-column:1/-1">
+      Consultando horários...
+    </div>`;
 
-  if (error) {
-    console.error(error);
-    container.innerHTML = `<div class="loading-card" style="grid-column:1/-1">Não foi possível consultar os horários.</div>`;
+  // 1) Agendamentos já confirmados/concluídos
+  const { data: appointmentsData, error: appointmentsError } = await supabase
+    .from("appointments")
+    .select("appointment_time,status")
+    .eq("appointment_date", date)
+    .in("status", ["confirmed", "completed"]);
+
+  if (appointmentsError) {
+    console.error("Erro ao consultar agendamentos:", appointmentsError);
+    container.innerHTML = `
+      <div class="loading-card" style="grid-column:1/-1">
+        Não foi possível consultar os agendamentos.
+      </div>`;
     return;
   }
 
-  const busy = new Set(
-    (data || []).map(item => String(item.appointment_time).slice(0,5))
+  // 2) Horários bloqueados pelo proprietário, inclusive recorrentes
+  const { data: blockedData, error: blockedError } = await supabase
+    .from("blocked_slots")
+    .select("block_time,reserved_for,notes")
+    .eq("block_date", date);
+
+  if (blockedError) {
+    console.error("Erro ao consultar bloqueios:", blockedError);
+    container.innerHTML = `
+      <div class="loading-card" style="grid-column:1/-1">
+        Não foi possível consultar os horários bloqueados.
+      </div>`;
+    return;
+  }
+
+  const busyAppointments = new Set(
+    (appointmentsData || []).map(item =>
+      String(item.appointment_time).slice(0, 5)
+    )
   );
 
-  container.innerHTML = dayTimes.map(time => `
-    <button
-      type="button"
-      class="time-btn"
-      ${busy.has(time) ? "disabled" : ""}
-      data-manual-time="${time}"
-    >
-      ${busy.has(time) ? "Ocupado" : time}
-    </button>
-  `).join("");
+  const blockedTimes = new Set(
+    (blockedData || []).map(item =>
+      String(item.block_time).slice(0, 5)
+    )
+  );
+
+  const blockedInfo = new Map(
+    (blockedData || []).map(item => [
+      String(item.block_time).slice(0, 5),
+      item
+    ])
+  );
+
+  container.innerHTML = dayTimes.map(time => {
+    const booked = busyAppointments.has(time);
+    const blocked = blockedTimes.has(time);
+
+    let label = time;
+    let extraClass = "";
+
+    if (booked) {
+      label = "Ocupado";
+      extraClass = "busy";
+    } else if (blocked) {
+      label = "Bloqueado";
+      extraClass = "blocked";
+    }
+
+    const block = blockedInfo.get(time);
+    const title = blocked
+      ? `Bloqueado${block?.reserved_for ? ` para ${block.reserved_for}` : ""}`
+      : "";
+
+    return `
+      <button
+        type="button"
+        class="time-btn ${extraClass}"
+        ${(booked || blocked) ? "disabled" : ""}
+        data-manual-time="${time}"
+        title="${escapeAttr(title)}"
+      >
+        ${booked || blocked ? `${time} • ${label}` : time}
+      </button>
+    `;
+  }).join("");
 
   $$("#manualTimeGrid .time-btn:not([disabled])").forEach(btn => {
     btn.onclick = () => {
