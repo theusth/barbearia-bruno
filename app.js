@@ -1884,6 +1884,13 @@ $("#bookingService").onchange = updateBookingSummary;
 window.openBooking = openBooking;
 window.cancelBooking = cancelBooking;
 window.ownerStatusMenu = ownerStatusMenu;
+
+window.setAgendaDate = setAgendaDate;
+window.changeAgendaDay = changeAgendaDay;
+window.changeAgendaMonth = changeAgendaMonth;
+window.agendaToday = agendaToday;
+window.renderDashboard = renderDashboard;
+
 window.newService = newService;
 window.editService = editService;
 window.toggleService = toggleService;
