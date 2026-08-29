@@ -1190,6 +1190,7 @@ function renderDashboardNav() {
   $$("#dashboardNav button").forEach(btn => btn.onclick = async () => {
     state.dashView = btn.dataset.view;
     if (["overview","agenda","appointments","clients"].includes(state.dashView)) await loadAppointments();
+    if (state.profile?.role === "owner" && state.dashView === "agenda") await loadBlockedSlots();
     if (state.profile?.role === "owner" && state.dashView === "overview") await loadOwnerStats();
     if (state.profile?.role === "owner" && state.dashView === "logs") await loadOwnerLogs();
     if (state.profile?.role === "owner" && state.dashView === "blocked") await loadBlockedSlots();
@@ -1305,6 +1306,14 @@ function renderAgendaCalendar(allAppointments) {
     );
   });
 
+  state.blockedSlots.forEach(b => {
+    if (!b.block_date) return;
+    countByDate.set(
+      b.block_date,
+      (countByDate.get(b.block_date) || 0) + 1
+    );
+  });
+
   const blanks = Array.from({ length: startWeekday }, () =>
     `<div class="agenda-calendar-empty"></div>`
   ).join("");
@@ -1405,6 +1414,13 @@ function renderOwner() {
       .filter(a => a.appointment_date === selectedDate)
       .sort((a,b) => String(a.appointment_time).localeCompare(String(b.appointment_time)));
 
+    const selectedBlockedSlots = state.blockedSlots
+      .filter(b => b.block_date === selectedDate)
+      .sort((a,b) => String(a.block_time).localeCompare(String(b.block_time)));
+
+    const selectedAgendaCount =
+      selectedAppointments.length + selectedBlockedSlots.length;
+
     const selectedDateLabel = new Date(`${selectedDate}T12:00:00`)
       .toLocaleDateString("pt-BR", {
         weekday: "long",
@@ -1423,8 +1439,8 @@ function renderOwner() {
               <span class="eyebrow">DIA SELECIONADO</span>
               <h3>${escapeHtml(selectedDateLabel)}</h3>
               <small>
-                ${selectedAppointments.length}
-                ${selectedAppointments.length === 1 ? "agendamento" : "agendamentos"}
+                ${selectedAgendaCount}
+                ${selectedAgendaCount === 1 ? "registro" : "registros"}
               </small>
             </div>
 
@@ -1460,34 +1476,72 @@ function renderOwner() {
               </thead>
 
               <tbody>
-                ${selectedAppointments.length
-                  ? selectedAppointments.map(a => `<tr>
-                      <td><strong>${String(a.appointment_time).slice(0,5)}</strong></td>
-                      <td>
-                        ${escapeHtml(a.profiles?.name || a.manual_client_name || "Cliente")}
-                        ${a.manual_client_name
-                          ? `<br><small style="color:#666">
-                              Agendado pelo proprietário
-                              ${a.manual_client_phone ? ` • ${escapeHtml(a.manual_client_phone)}` : ""}
-                            </small>`
-                          : ""}
-                      </td>
-                      <td>${escapeHtml(a.services?.name || "Serviço")}</td>
-                      <td>${money(a.services?.price)}</td>
-                      <td>${STATUS_LABELS[a.status] || a.status}</td>
-                      <td>
-                        <button
-                          class="mini-btn"
-                          onclick="window.ownerStatusMenu('${a.id}')"
-                        >
-                          Alterar
-                        </button>
-                      </td>
-                    </tr>`).join("")
+                ${selectedAgendaCount
+                  ? [
+                      ...selectedAppointments.map(a => ({
+                        type: "appointment",
+                        time: String(a.appointment_time).slice(0,5),
+                        html: `<tr>
+                          <td><strong>${String(a.appointment_time).slice(0,5)}</strong></td>
+                          <td>
+                            ${escapeHtml(a.profiles?.name || a.manual_client_name || "Cliente")}
+                            ${a.manual_client_name
+                              ? `<br><small style="color:#666">
+                                  Agendado pelo proprietário
+                                  ${a.manual_client_phone ? ` • ${escapeHtml(a.manual_client_phone)}` : ""}
+                                </small>`
+                              : ""}
+                          </td>
+                          <td>${escapeHtml(a.services?.name || "Serviço")}</td>
+                          <td>${money(a.services?.price)}</td>
+                          <td>${STATUS_LABELS[a.status] || a.status}</td>
+                          <td>
+                            <button
+                              class="mini-btn"
+                              onclick="window.ownerStatusMenu('${a.id}')"
+                            >
+                              Alterar
+                            </button>
+                          </td>
+                        </tr>`
+                      })),
+                      ...selectedBlockedSlots.map(b => ({
+                        type: "blocked",
+                        time: String(b.block_time).slice(0,5),
+                        html: `<tr class="agenda-fixed-row">
+                          <td><strong>${String(b.block_time).slice(0,5)}</strong></td>
+                          <td>
+                            ${escapeHtml(b.reserved_for || "Cliente fixo")}
+                            ${b.client_phone
+                              ? `<br><small style="color:#666">${escapeHtml(b.client_phone)}</small>`
+                              : ""}
+                          </td>
+                          <td>
+                            <strong>Horário fixo</strong>
+                            ${b.notes
+                              ? `<br><small style="color:#666">${escapeHtml(b.notes)}</small>`
+                              : ""}
+                          </td>
+                          <td>—</td>
+                          <td><span class="status">Bloqueado</span></td>
+                          <td>
+                            <button
+                              class="mini-btn"
+                              onclick="window.goDash('blocked')"
+                            >
+                              Ver bloqueio
+                            </button>
+                          </td>
+                        </tr>`
+                      }))
+                    ]
+                    .sort((a,b) => a.time.localeCompare(b.time))
+                    .map(item => item.html)
+                    .join("")
                   : `<tr>
                       <td colspan="6">
                         <div class="empty-state">
-                          <strong>Nenhum agendamento neste dia</strong>
+                          <strong>Nenhum agendamento ou horário fixo neste dia</strong>
                           Clique em outro dia no calendário ou use "Marcar horário".
                         </div>
                       </td>
@@ -1906,6 +1960,7 @@ window.goDash = async id => {
   if (["overview","agenda","appointments","clients"].includes(id)) await loadAppointments();
   if (state.profile?.role === "owner" && id === "overview") await loadOwnerStats();
   if (state.profile?.role === "owner" && id === "logs") await loadOwnerLogs();
+  if (state.profile?.role === "owner" && id === "agenda") await loadBlockedSlots();
   if (state.profile?.role === "owner" && id === "blocked") await loadBlockedSlots();
   if (state.profile?.role === "owner" && id === "business") await loadBusinessSettings();
   renderDashboardNav();
@@ -2126,6 +2181,37 @@ agendaCalendarStyle.textContent = `
   }
 `;
 document.head.appendChild(agendaCalendarStyle);
+
+
+const agendaFixedStyle = document.createElement("style");
+agendaFixedStyle.textContent = `
+  .agenda-fixed-row{
+    background:rgba(255,255,255,.025);
+  }
+
+  .agenda-fixed-row td{
+    border-bottom-color:#292929;
+  }
+
+  .agenda-fixed-row td:first-child strong{
+    position:relative;
+  }
+
+  .agenda-fixed-row td:first-child strong:after{
+    content:"FIXO";
+    display:inline-block;
+    margin-left:8px;
+    padding:3px 6px;
+    border-radius:20px;
+    border:1px solid #333;
+    background:#161616;
+    color:#888;
+    font-size:8px;
+    letter-spacing:1px;
+    vertical-align:middle;
+  }
+`;
+document.head.appendChild(agendaFixedStyle);
 
 setupReveal();
 bootSession();
