@@ -73,6 +73,7 @@ let state = {
   ownerStats: null,
   blockedSlots: [],
   manualSelectedTime: null,
+  agendaSelectedDate: new Date().toISOString().slice(0,10),
   dashView: "overview",
   selectedTime: null
 };
@@ -178,24 +179,54 @@ async function loadProfile() {
 
 async function loadAppointments() {
   if (!state.user) return;
-  const query = supabase
+
+  const fullSelect = `
+    id, client_id, service_id, appointment_date, appointment_time,
+    status, notes, created_at, manual_client_name, manual_client_phone, created_by_owner,
+    services ( id, name, price, duration_minutes ),
+    profiles ( id, name, phone )
+  `;
+
+  const basicSelect = `
+    id, client_id, service_id, appointment_date, appointment_time,
+    status, notes, created_at,
+    services ( id, name, price, duration_minutes ),
+    profiles ( id, name, phone )
+  `;
+
+  let { data, error } = await supabase
     .from("appointments")
-    .select(`
-      id, client_id, service_id, appointment_date, appointment_time,
-      status, notes, created_at, manual_client_name, manual_client_phone, created_by_owner,
-      services ( id, name, price, duration_minutes ),
-      profiles ( id, name, phone )
-    `)
+    .select(fullSelect)
     .order("appointment_date", { ascending: true })
     .order("appointment_time", { ascending: true });
 
-  const { data, error } = await query;
+  // Se o banco ainda não tiver as colunas de agendamento manual,
+  // carrega a agenda normal em vez de deixar a página vazia.
+  if (error) {
+    console.warn("Consulta completa da agenda falhou; tentando modo compatível.", error);
+
+    const fallback = await supabase
+      .from("appointments")
+      .select(basicSelect)
+      .order("appointment_date", { ascending: true })
+      .order("appointment_time", { ascending: true });
+
+    data = fallback.data;
+    error = fallback.error;
+  }
+
   if (error) {
     console.error(error);
     showToast("Não foi possível carregar os agendamentos.", true);
     return;
   }
-  state.appointments = data || [];
+
+  state.appointments = (data || []).map(a => ({
+    manual_client_name: null,
+    manual_client_phone: null,
+    created_by_owner: null,
+    ...a
+  }));
 }
 
 
@@ -1205,6 +1236,132 @@ function futureAppointments(list) {
   return list.filter(a => a.appointment_date >= today && a.status === "confirmed");
 }
 
+
+function agendaLocalISO(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function agendaSelectedDateObj() {
+  const value = state.agendaSelectedDate || new Date().toISOString().slice(0,10);
+  return new Date(`${value}T12:00:00`);
+}
+
+function setAgendaDate(date) {
+  state.agendaSelectedDate = date;
+  renderDashboard();
+}
+
+function changeAgendaDay(amount) {
+  const d = agendaSelectedDateObj();
+  d.setDate(d.getDate() + Number(amount));
+  state.agendaSelectedDate = agendaLocalISO(d);
+  renderDashboard();
+}
+
+function changeAgendaMonth(amount) {
+  const current = agendaSelectedDateObj();
+  const target = new Date(
+    current.getFullYear(),
+    current.getMonth() + Number(amount),
+    1,
+    12, 0, 0
+  );
+
+  state.agendaSelectedDate = agendaLocalISO(target);
+  renderDashboard();
+}
+
+function agendaToday() {
+  state.agendaSelectedDate = agendaLocalISO(new Date());
+  renderDashboard();
+}
+
+function renderAgendaCalendar(allAppointments) {
+  const selected = agendaSelectedDateObj();
+  const year = selected.getFullYear();
+  const month = selected.getMonth();
+
+  const firstDay = new Date(year, month, 1, 12, 0, 0);
+  const lastDay = new Date(year, month + 1, 0, 12, 0, 0);
+  const daysInMonth = lastDay.getDate();
+  const startWeekday = firstDay.getDay();
+
+  const todayISO = agendaLocalISO(new Date());
+  const monthLabel = selected.toLocaleDateString("pt-BR", {
+    month: "long",
+    year: "numeric"
+  });
+
+  const countByDate = new Map();
+
+  allAppointments.forEach(a => {
+    if (!a.appointment_date || a.status === "cancelled") return;
+    countByDate.set(
+      a.appointment_date,
+      (countByDate.get(a.appointment_date) || 0) + 1
+    );
+  });
+
+  const blanks = Array.from({ length: startWeekday }, () =>
+    `<div class="agenda-calendar-empty"></div>`
+  ).join("");
+
+  const days = Array.from({ length: daysInMonth }, (_, index) => {
+    const day = index + 1;
+    const date = new Date(year, month, day, 12, 0, 0);
+    const iso = agendaLocalISO(date);
+    const count = countByDate.get(iso) || 0;
+
+    return `
+      <button
+        type="button"
+        class="agenda-calendar-day
+          ${iso === state.agendaSelectedDate ? "selected" : ""}
+          ${iso === todayISO ? "today" : ""}
+          ${count ? "has-events" : ""}"
+        onclick="window.setAgendaDate('${iso}')"
+      >
+        <span>${day}</span>
+        ${count ? `<small>${count}</small>` : ""}
+      </button>
+    `;
+  }).join("");
+
+  return `
+    <section class="panel-card agenda-calendar-card">
+      <div class="agenda-calendar-top">
+        <button class="agenda-calendar-nav" onclick="window.changeAgendaMonth(-1)">←</button>
+
+        <div>
+          <strong>${escapeHtml(monthLabel)}</strong>
+          <span>Escolha um dia para ver os horários</span>
+        </div>
+
+        <button class="agenda-calendar-nav" onclick="window.changeAgendaMonth(1)">→</button>
+      </div>
+
+      <div class="agenda-weekdays">
+        <span>Dom</span>
+        <span>Seg</span>
+        <span>Ter</span>
+        <span>Qua</span>
+        <span>Qui</span>
+        <span>Sex</span>
+        <span>Sáb</span>
+      </div>
+
+      <div class="agenda-calendar-grid">
+        ${blanks}
+        ${days}
+      </div>
+    </section>
+  `;
+}
+
+
 function renderOwner() {
   const all = state.appointments;
   const future = futureAppointments(all);
@@ -1242,25 +1399,105 @@ function renderOwner() {
       </div>`;
   } else if (state.dashView === "agenda") {
     $("#dashTitle").textContent = "Agenda";
+
+    const selectedDate = state.agendaSelectedDate || today;
+    const selectedAppointments = all
+      .filter(a => a.appointment_date === selectedDate)
+      .sort((a,b) => String(a.appointment_time).localeCompare(String(b.appointment_time)));
+
+    const selectedDateLabel = new Date(`${selectedDate}T12:00:00`)
+      .toLocaleDateString("pt-BR", {
+        weekday: "long",
+        day: "2-digit",
+        month: "long",
+        year: "numeric"
+      });
+
     $("#dashboardContent").innerHTML = `
-      <section class="panel-card">
-        <div class="panel-title"><h3>Todos os agendamentos</h3><span>${all.length} registros</span></div>
-        <div class="table-wrap"><table class="data-table">
-          <thead><tr><th>Data</th><th>Horário</th><th>Cliente</th><th>Serviço</th><th>Valor</th><th>Status</th><th>Ação</th></tr></thead>
-          <tbody>${all.map(a=>`<tr>
-            <td>${fmtDate(a.appointment_date)}</td>
-            <td>${String(a.appointment_time).slice(0,5)}</td>
-            <td>
-              ${escapeHtml(a.profiles?.name || a.manual_client_name || "Cliente")}
-              ${a.manual_client_name ? `<br><small style="color:#666">Agendado pelo proprietário${a.manual_client_phone ? ` • ${escapeHtml(a.manual_client_phone)}` : ""}</small>` : ""}
-            </td>
-            <td>${escapeHtml(a.services?.name || "Serviço")}</td>
-            <td>${money(a.services?.price)}</td>
-            <td>${STATUS_LABELS[a.status] || a.status}</td>
-            <td><button class="mini-btn" onclick="window.ownerStatusMenu('${a.id}')">Alterar</button></td>
-          </tr>`).join("")}</tbody>
-        </table></div>
-      </section>`;
+      <div class="agenda-layout">
+        ${renderAgendaCalendar(all)}
+
+        <section class="panel-card agenda-day-panel">
+          <div class="agenda-day-toolbar">
+            <div>
+              <span class="eyebrow">DIA SELECIONADO</span>
+              <h3>${escapeHtml(selectedDateLabel)}</h3>
+              <small>
+                ${selectedAppointments.length}
+                ${selectedAppointments.length === 1 ? "agendamento" : "agendamentos"}
+              </small>
+            </div>
+
+            <div class="agenda-day-actions">
+              <button class="mini-btn" onclick="window.changeAgendaDay(-1)">← Dia anterior</button>
+              <button class="mini-btn" onclick="window.agendaToday()">Hoje</button>
+              <button class="mini-btn" onclick="window.changeAgendaDay(1)">Próximo dia →</button>
+            </div>
+          </div>
+
+          <div class="agenda-date-picker">
+            <label>
+              Ir direto para uma data
+              <input
+                type="date"
+                value="${selectedDate}"
+                onchange="window.setAgendaDate(this.value)"
+              >
+            </label>
+          </div>
+
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Horário</th>
+                  <th>Cliente</th>
+                  <th>Serviço</th>
+                  <th>Valor</th>
+                  <th>Status</th>
+                  <th>Ação</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                ${selectedAppointments.length
+                  ? selectedAppointments.map(a => `<tr>
+                      <td><strong>${String(a.appointment_time).slice(0,5)}</strong></td>
+                      <td>
+                        ${escapeHtml(a.profiles?.name || a.manual_client_name || "Cliente")}
+                        ${a.manual_client_name
+                          ? `<br><small style="color:#666">
+                              Agendado pelo proprietário
+                              ${a.manual_client_phone ? ` • ${escapeHtml(a.manual_client_phone)}` : ""}
+                            </small>`
+                          : ""}
+                      </td>
+                      <td>${escapeHtml(a.services?.name || "Serviço")}</td>
+                      <td>${money(a.services?.price)}</td>
+                      <td>${STATUS_LABELS[a.status] || a.status}</td>
+                      <td>
+                        <button
+                          class="mini-btn"
+                          onclick="window.ownerStatusMenu('${a.id}')"
+                        >
+                          Alterar
+                        </button>
+                      </td>
+                    </tr>`).join("")
+                  : `<tr>
+                      <td colspan="6">
+                        <div class="empty-state">
+                          <strong>Nenhum agendamento neste dia</strong>
+                          Clique em outro dia no calendário ou use "Marcar horário".
+                        </div>
+                      </td>
+                    </tr>`
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>`;
   } else if (state.dashView === "manual") {
     renderManualBookingView();
   } else if (state.dashView === "availability") {
@@ -1667,6 +1904,221 @@ window.goDash = async id => {
   renderDashboardNav();
   renderDashboard();
 };
+
+
+const agendaCalendarStyle = document.createElement("style");
+agendaCalendarStyle.textContent = `
+  .agenda-layout{
+    display:grid;
+    grid-template-columns:minmax(330px,.72fr) minmax(0,1.28fr);
+    gap:18px;
+    align-items:start;
+  }
+
+  .agenda-calendar-card{
+    position:sticky;
+    top:24px;
+  }
+
+  .agenda-calendar-top{
+    display:grid;
+    grid-template-columns:42px 1fr 42px;
+    gap:12px;
+    align-items:center;
+    margin-bottom:22px;
+  }
+
+  .agenda-calendar-top>div{
+    text-align:center;
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+  }
+
+  .agenda-calendar-top strong{
+    font-family:"Playfair Display",serif;
+    text-transform:capitalize;
+    font-size:22px;
+  }
+
+  .agenda-calendar-top span{
+    font-size:11px;
+    color:#666;
+  }
+
+  .agenda-calendar-nav{
+    height:42px;
+    border:1px solid #282828;
+    border-radius:12px;
+    background:#121212;
+    color:#fff;
+    cursor:pointer;
+    font-size:18px;
+  }
+
+  .agenda-calendar-nav:hover{
+    background:#1b1b1b;
+  }
+
+  .agenda-weekdays,
+  .agenda-calendar-grid{
+    display:grid;
+    grid-template-columns:repeat(7,1fr);
+    gap:7px;
+  }
+
+  .agenda-weekdays{
+    margin-bottom:8px;
+  }
+
+  .agenda-weekdays span{
+    text-align:center;
+    color:#565656;
+    font-size:9px;
+    font-weight:800;
+    text-transform:uppercase;
+    letter-spacing:.7px;
+  }
+
+  .agenda-calendar-empty{
+    min-height:48px;
+  }
+
+  .agenda-calendar-day{
+    min-height:48px;
+    position:relative;
+    border:1px solid #202020;
+    border-radius:12px;
+    background:#111;
+    color:#aaa;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    transition:.18s ease;
+  }
+
+  .agenda-calendar-day:hover{
+    background:#181818;
+    color:#fff;
+    border-color:#333;
+    transform:translateY(-1px);
+  }
+
+  .agenda-calendar-day>span{
+    font-size:12px;
+    font-weight:700;
+  }
+
+  .agenda-calendar-day small{
+    position:absolute;
+    right:5px;
+    top:5px;
+    min-width:17px;
+    height:17px;
+    padding:0 4px;
+    border-radius:20px;
+    background:#292929;
+    color:#ddd;
+    display:grid;
+    place-items:center;
+    font-size:8px;
+    font-weight:800;
+  }
+
+  .agenda-calendar-day.today{
+    border-color:#555;
+  }
+
+  .agenda-calendar-day.today:after{
+    content:"";
+    position:absolute;
+    bottom:5px;
+    width:4px;
+    height:4px;
+    border-radius:50%;
+    background:#fff;
+  }
+
+  .agenda-calendar-day.selected{
+    background:linear-gradient(135deg,#fff,#bdbdbd);
+    border-color:#fff;
+    color:#070707;
+    box-shadow:0 10px 30px rgba(255,255,255,.08);
+  }
+
+  .agenda-calendar-day.selected small{
+    background:#111;
+    color:#fff;
+  }
+
+  .agenda-day-panel{
+    min-width:0;
+  }
+
+  .agenda-day-toolbar{
+    display:flex;
+    justify-content:space-between;
+    gap:16px;
+    align-items:flex-start;
+    margin-bottom:16px;
+  }
+
+  .agenda-day-toolbar h3{
+    font-family:"Playfair Display",serif;
+    font-size:24px;
+    text-transform:capitalize;
+    margin-top:-7px;
+  }
+
+  .agenda-day-toolbar small{
+    display:block;
+    margin-top:6px;
+    color:#666;
+  }
+
+  .agenda-day-actions{
+    display:flex;
+    gap:7px;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+  }
+
+  .agenda-date-picker{
+    max-width:260px;
+    margin-bottom:18px;
+  }
+
+  @media(max-width:1100px){
+    .agenda-layout{
+      grid-template-columns:1fr;
+    }
+
+    .agenda-calendar-card{
+      position:static;
+    }
+  }
+
+  @media(max-width:600px){
+    .agenda-day-toolbar{
+      flex-direction:column;
+    }
+
+    .agenda-day-actions{
+      justify-content:flex-start;
+    }
+
+    .agenda-calendar-day,
+    .agenda-calendar-empty{
+      min-height:42px;
+    }
+
+    .agenda-calendar-top strong{
+      font-size:18px;
+    }
+  }
+`;
+document.head.appendChild(agendaCalendarStyle);
 
 setupReveal();
 bootSession();
