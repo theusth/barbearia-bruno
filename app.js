@@ -7,7 +7,17 @@ const CONFIGURED =
   SUPABASE_ANON_KEY.length > 20 &&
   !SUPABASE_ANON_KEY.includes("COLE_");
 
-const supabase = CONFIGURED ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+const supabase = CONFIGURED
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        storage: window.localStorage,
+        storageKey: "bruno-barbearia-auth"
+      }
+    })
+  : null;
 
 const WEEKDAY_TIMES = [
   "08:00","08:40","09:20","10:00","10:40","11:20",
