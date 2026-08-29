@@ -134,3 +134,15 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+
+/* AGENDAMENTO MANUAL - ESTADOS DE HORÁRIO */
+#manualTimeGrid .time-btn.busy:disabled{
+  opacity:.35;
+  cursor:not-allowed;
+}
+#manualTimeGrid .time-btn.blocked:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+  border-style:dashed;
+}
