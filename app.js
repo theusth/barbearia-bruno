@@ -206,13 +206,29 @@ async function loadAppointments() {
     console.warn("Consulta completa da agenda falhou; tentando modo compatível.", error);
 
     const fallback = await supabase
-      .from("appointments")
+      .from("appointments") 
       .select(basicSelect)
       .order("appointment_date", { ascending: true })
       .order("appointment_time", { ascending: true });
 
     data = fallback.data;
     error = fallback.error;
+  }
+
+  // Alguns projetos antigos não têm os relacionamentos de services/profiles
+  // reconhecidos no cache de esquema do Supabase. Nesse caso, ainda carrega
+  // os agendamentos pelas colunas essenciais, sem impedir a abertura da Agenda.
+  if (error) {
+    console.warn("Relacionamentos da agenda indisponíveis; tentando consulta essencial.", error);
+
+    const essentialFallback = await supabase
+      .from("appointments")
+      .select("id,client_id,service_id,appointment_date,appointment_time,status,notes,created_at")
+      .order("appointment_date", { ascending: true })
+      .order("appointment_time", { ascending: true });
+
+    data = essentialFallback.data;
+    error = essentialFallback.error;
   }
 
   if (error) {
@@ -225,7 +241,9 @@ async function loadAppointments() {
     manual_client_name: null,
     manual_client_phone: null,
     created_by_owner: null,
-    ...a
+    ...a,
+    services: a.services || serviceById(a.service_id) || null,
+    profiles: a.profiles || null
   }));
 }
 
