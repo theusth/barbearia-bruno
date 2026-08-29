@@ -3,9 +3,10 @@ VERSÃO ESTÁVEL + CORREÇÃO ISOLADA DO SÁBADO
 1. Esta versão volta para o app.js que estava abrindo o site normalmente.
 2. Não foi adicionada nenhuma consulta nova no boot do site.
 3. Rode CORRIGIR_FIXO_SABADO.sql no Supabase.
-4. Depois crie novamente um horário fixo de sábado pelo painel.
-5. A Agenda já lê blocked_slots e mostrará o fixo no sábado correspondente.
+4. O SQL também tenta completar ocorrências ausentes das séries antigas de sábado.
+5. Crie novos horários fixos normalmente; a Agenda lê blocked_slots e mostrará
+   o fixo no sábado correspondente.
 
 IMPORTANTE:
-Se você já criou uma série de sábado quando a função antiga estava instalada,
-apague essa série antiga e crie novamente depois de rodar o SQL.
+Se uma série antiga não tiver nenhuma ocorrência salva no banco, não há dados
+suficientes para recuperá-la: nesse único caso, crie-a novamente após rodar o SQL.

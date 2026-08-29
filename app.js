@@ -371,8 +371,8 @@ async function createBlockedSlot() {
     return showToast("Preencha início, dia da semana, horário, duração e cliente.", true);
   }
 
-  if (weekday === 0) {
-    return showToast("A barbearia fica fechada aos domingos.", true);
+  if (weekday < 1 || weekday > 6) {
+    return showToast("Escolha um dia entre segunda e sábado.", true);
   }
 
   if (!getTimesForWeekday(weekday).includes(block_time)) {

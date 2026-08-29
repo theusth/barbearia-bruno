@@ -3,6 +3,9 @@
 -- Inclusive sábado (PostgreSQL: domingo=0 ... sábado=6).
 -- Rode no Supabase > SQL Editor > Run.
 
+alter table public.blocked_slots
+  add column if not exists recurrence_frequency_weeks integer default 1;
+
 drop function if exists public.owner_create_recurring_block(
   date,integer,time,integer,integer,text,text,text
 );
@@ -48,6 +51,13 @@ begin
 
   if nullif(trim(p_reserved_for),'') is null then
     raise exception 'Informe o nome do cliente.';
+  end if;
+
+  if p_time < time '08:00'
+     or (extract(epoch from (p_time - time '08:00'))::integer % 2400) <> 0
+     or (p_weekday = 6 and p_time > time '16:40')
+     or (p_weekday between 1 and 5 and p_time > time '19:20') then
+    raise exception 'Horário fora do expediente do dia escolhido.';
   end if;
 
   v_end_date := p_start_date + (p_duration_days - 1);
@@ -103,6 +113,56 @@ revoke all on function public.owner_create_recurring_block(
 grant execute on function public.owner_create_recurring_block(
   date,integer,time,integer,integer,text,text,text
 ) to authenticated;
+
+-- Recria ocorrências ausentes em séries de sábado já existentes.
+-- Usa a primeira ocorrência salva como âncora e respeita frequência 1 ou 2.
+with saturday_series as (
+  select
+    group_id,
+    min(block_date) as first_date,
+    min(block_time) as block_time,
+    min(reserved_for) as reserved_for,
+    min(client_phone) as client_phone,
+    min(notes) as notes,
+    (array_agg(created_by order by block_date))[1] as created_by,
+    coalesce(max(recurrence_days), 30) as recurrence_days,
+    case when coalesce(max(recurrence_frequency_weeks), 1) = 2 then 2 else 1 end
+      as frequency_weeks
+  from public.blocked_slots
+  where group_id is not null
+    and recurrence_weekday = 6
+  group by group_id
+), missing_occurrences as (
+  select
+    s.*,
+    d::date as block_date
+  from saturday_series s
+  cross join lateral generate_series(
+    s.first_date::timestamp,
+    (s.first_date + (s.recurrence_days - 1))::timestamp,
+    make_interval(days => 7 * s.frequency_weeks)
+  ) d
+  where extract(dow from d) = 6
+)
+insert into public.blocked_slots (
+  block_date, block_time, reserved_for, client_phone, notes,
+  created_by, group_id, recurrence_days, recurrence_weekday,
+  recurrence_frequency_weeks
+)
+select
+  m.block_date, m.block_time, m.reserved_for, m.client_phone, m.notes,
+  m.created_by, m.group_id, m.recurrence_days, 6, m.frequency_weeks
+from missing_occurrences m
+where not exists (
+  select 1 from public.blocked_slots b
+  where b.block_date = m.block_date and b.block_time = m.block_time
+)
+and not exists (
+  select 1 from public.appointments a
+  where a.appointment_date = m.block_date
+    and a.appointment_time = m.block_time
+    and a.status in ('confirmed','completed')
+);
 
 -- TESTE: depois de criar um fixo de sábado no painel,
 -- esta consulta deve mostrar as linhas gravadas.
