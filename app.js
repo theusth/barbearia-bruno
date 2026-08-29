@@ -1280,6 +1280,86 @@ function agendaToday() {
   renderDashboard();
 }
 
+
+function daysBetweenISO(startISO, endISO) {
+  const start = new Date(`${startISO}T12:00:00`);
+  const end = new Date(`${endISO}T12:00:00`);
+  return Math.round((end - start) / 86400000);
+}
+
+function getAgendaBlockedSlotsForDate(date, appointmentsForDate = []) {
+  const exact = state.blockedSlots
+    .filter(b => b.block_date === date)
+    .map(b => ({ ...b, virtual_recurrence: false }));
+
+  const exactIds = new Set(exact.map(b => b.id));
+  const exactGroupTimes = new Set(
+    exact.map(b => `${b.group_id || "single"}|${String(b.block_time).slice(0,5)}`)
+  );
+
+  const appointmentTimes = new Set(
+    appointmentsForDate
+      .filter(a => a.status !== "cancelled")
+      .map(a => String(a.appointment_time).slice(0,5))
+  );
+
+  // Agrupa séries já existentes por group_id.
+  const groups = new Map();
+
+  state.blockedSlots.forEach(b => {
+    if (!b.group_id || !b.recurrence_days) return;
+
+    if (!groups.has(b.group_id)) groups.set(b.group_id, []);
+    groups.get(b.group_id).push(b);
+  });
+
+  const derived = [];
+
+  for (const [groupId, rows] of groups.entries()) {
+    rows.sort((a,b) => String(a.block_date).localeCompare(String(b.block_date)));
+
+    const first = rows[0];
+    const firstDate = first.block_date;
+    const recurrenceDays = Number(first.recurrence_days || 0);
+    const frequencyWeeks = Number(first.recurrence_frequency_weeks || 1);
+    const weekday = Number(first.recurrence_weekday);
+
+    if (!firstDate || !recurrenceDays || ![1,2].includes(frequencyWeeks)) continue;
+
+    const target = new Date(`${date}T12:00:00`);
+
+    if (target.getDay() !== weekday) continue;
+
+    const diff = daysBetweenISO(firstDate, date);
+
+    if (diff < 0 || diff >= recurrenceDays) continue;
+
+    // Toda semana = 7 dias; semana sim/semana não = 14 dias.
+    const intervalDays = 7 * frequencyWeeks;
+
+    if (diff % intervalDays !== 0) continue;
+
+    const time = String(first.block_time).slice(0,5);
+
+    // Se já existe linha real para a data/horário, não duplica.
+    if (exactGroupTimes.has(`${groupId}|${time}`)) continue;
+
+    // Se existe atendimento no mesmo horário, prioriza o atendimento.
+    if (appointmentTimes.has(time)) continue;
+
+    derived.push({
+      ...first,
+      id: `virtual-${groupId}-${date}-${time}`,
+      block_date: date,
+      virtual_recurrence: true
+    });
+  }
+
+  return [...exact, ...derived]
+    .sort((a,b) => String(a.block_time).localeCompare(String(b.block_time)));
+}
+
+
 function renderAgendaCalendar(allAppointments) {
   const selected = agendaSelectedDateObj();
   const year = selected.getFullYear();
@@ -1306,13 +1386,26 @@ function renderAgendaCalendar(allAppointments) {
     );
   });
 
-  state.blockedSlots.forEach(b => {
-    if (!b.block_date) return;
-    countByDate.set(
-      b.block_date,
-      (countByDate.get(b.block_date) || 0) + 1
+  // Conta fixos reais + recorrentes esperados em cada dia do mês.
+  for (let day = 1; day <= daysInMonth; day++) {
+    const iso = agendaLocalISO(new Date(year, month, day, 12, 0, 0));
+
+    const appointmentsForDay = allAppointments.filter(a =>
+      a.appointment_date === iso && a.status !== "cancelled"
     );
-  });
+
+    const fixedForDay = getAgendaBlockedSlotsForDate(
+      iso,
+      appointmentsForDay
+    );
+
+    if (fixedForDay.length) {
+      countByDate.set(
+        iso,
+        (countByDate.get(iso) || 0) + fixedForDay.length
+      );
+    }
+  }
 
   const blanks = Array.from({ length: startWeekday }, () =>
     `<div class="agenda-calendar-empty"></div>`
@@ -1414,9 +1507,10 @@ function renderOwner() {
       .filter(a => a.appointment_date === selectedDate)
       .sort((a,b) => String(a.appointment_time).localeCompare(String(b.appointment_time)));
 
-    const selectedBlockedSlots = state.blockedSlots
-      .filter(b => b.block_date === selectedDate)
-      .sort((a,b) => String(a.block_time).localeCompare(String(b.block_time)));
+    const selectedBlockedSlots = getAgendaBlockedSlotsForDate(
+      selectedDate,
+      selectedAppointments
+    );
 
     const selectedAgendaCount =
       selectedAppointments.length + selectedBlockedSlots.length;
@@ -1517,7 +1611,7 @@ function renderOwner() {
                               : ""}
                           </td>
                           <td>
-                            <strong>Horário fixo</strong>
+                            <strong>Horário fixo${b.virtual_recurrence ? " recorrente" : ""}</strong>
                             ${b.notes
                               ? `<br><small style="color:#666">${escapeHtml(b.notes)}</small>`
                               : ""}
