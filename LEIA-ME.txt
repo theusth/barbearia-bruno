@@ -62,3 +62,94 @@ O horário entra na agenda normal e fica indisponível para outros clientes.
 
 NO SUPABASE:
 Execute UPDATE_AGENDAMENTO_MANUAL.sql uma vez.
+
+
+LOGIN SALVO
+- A sessão fica salva no navegador.
+- Cliente e proprietário continuam conectados ao voltar ao site.
+- O token é renovado automaticamente.
+- O login só sai ao clicar em "Sair da conta", limpar os dados do navegador
+  ou usar modo anônimo/privado.
+
+
+CORREÇÃO DO AGENDAMENTO MANUAL
+- A aba "Marcar horário" agora consulta:
+  1. agendamentos já confirmados/concluídos;
+  2. horários bloqueados;
+  3. bloqueios recorrentes, pois eles ficam salvos em blocked_slots.
+- Horário bloqueado aparece como "Bloqueado".
+- Horário já agendado aparece como "Ocupado".
+- Só horários realmente livres podem ser selecionados.
+
+NO SUPABASE:
+Execute UPDATE_MANUAL_RESPEITA_BLOQUEIOS.sql uma vez.
+
+
+========================================
+AGENDA COM CALENDÁRIO
+========================================
+
+A Agenda do proprietário agora permite:
+
+- Clicar em qualquer dia do mês.
+- Ver somente os agendamentos daquele dia.
+- Ver quantos agendamentos existem em cada dia.
+- Navegar para o mês anterior e próximo mês.
+- Usar Dia anterior / Hoje / Próximo dia.
+- Ir diretamente para qualquer data pelo seletor.
+- Continuar alterando o status dos agendamentos.
+
+Também permanecem funcionando:
+
+- Login salvo no navegador.
+- Agendamento manual pelo proprietário.
+- Agendamento manual respeitando horários bloqueados.
+- Horários disponíveis.
+- Horários bloqueados.
+- Bloqueios recorrentes.
+- Toda semana / semana sim, semana não.
+- Horários de 40 em 40 minutos.
+- Segunda a sexta: 08:00 até 19:20.
+- Sábado: funcionamento de 08:00 às 17:00
+  (último início possível na grade: 16:40).
+- Domingo fechado.
+- Serviços.
+- Clientes.
+- Logs.
+- Dados da barbearia.
+- Cadastro com e-mail opcional.
+
+INSTALAÇÃO:
+
+1. Substitua os arquivos do seu repositório GitHub pelos deste pacote.
+2. Faça Commit changes.
+3. Aguarde a Vercel fazer o deploy.
+4. Atualize o site com Ctrl + F5.
+
+Para o CALENDÁRIO especificamente não é necessário SQL novo.
+Os SQLs existentes continuam no pacote para as outras funções.
+
+
+CORREÇÃO DO CALENDÁRIO
+- Corrigidos os botões dos dias.
+- Corrigido mês anterior/próximo.
+- Corrigidos Dia anterior / Hoje / Próximo dia.
+- Corrigido seletor direto de data.
+- As funções agora estão expostas corretamente para os eventos onclick.
+
+Para esta correção:
+- Não precisa rodar SQL.
+- Basta substituir o app.js ou o projeto completo.
+
+
+AGENDA COM HORÁRIOS FIXOS
+- Horários bloqueados/fixos também aparecem no dia do calendário.
+- O calendário conta agendamentos + horários fixos.
+- Na tabela, o fixo aparece com:
+  - horário;
+  - nome do cliente;
+  - telefone, se houver;
+  - observação;
+  - status Bloqueado;
+  - selo FIXO.
+- Não precisa SQL novo para esta alteração.

@@ -72,7 +72,6 @@ let state = {
   logs: [],
   ownerStats: null,
   blockedSlots: [],
-  agendaBlockedSlots: [],
   manualSelectedTime: null,
   agendaSelectedDate: new Date().toISOString().slice(0,10),
   dashView: "overview",
@@ -569,10 +568,7 @@ async function bootSession() {
     state.user = session.user;
     await Promise.all([loadProfile(), loadServices(), loadBusinessSettings()]);
     await loadAppointments();
-    if (state.profile?.role === "owner") {
-      await Promise.all([loadOwnerLogs(), loadOwnerStats(), loadBlockedSlots()]);
-      await loadAgendaBlockedSlotsForMonth(state.agendaSelectedDate);
-    }
+    if (state.profile?.role === "owner") await Promise.all([loadOwnerLogs(), loadOwnerStats(), loadBlockedSlots()]);
     enterDashboard();
   } else {
     await Promise.all([loadServices(), loadBusinessSettings()]);
@@ -1194,10 +1190,7 @@ function renderDashboardNav() {
   $$("#dashboardNav button").forEach(btn => btn.onclick = async () => {
     state.dashView = btn.dataset.view;
     if (["overview","agenda","appointments","clients"].includes(state.dashView)) await loadAppointments();
-    if (state.profile?.role === "owner" && state.dashView === "agenda") {
-      await loadBlockedSlots();
-      await loadAgendaBlockedSlotsForMonth(state.agendaSelectedDate);
-    }
+    if (state.profile?.role === "owner" && state.dashView === "agenda") await loadBlockedSlots();
     if (state.profile?.role === "owner" && state.dashView === "overview") await loadOwnerStats();
     if (state.profile?.role === "owner" && state.dashView === "logs") await loadOwnerLogs();
     if (state.profile?.role === "owner" && state.dashView === "blocked") await loadBlockedSlots();
@@ -1245,75 +1238,6 @@ function futureAppointments(list) {
 }
 
 
-
-async function loadAgendaBlockedSlotsForMonth(dateISO) {
-  if (state.profile?.role !== "owner") return [];
-
-  const selected = new Date(`${dateISO}T12:00:00`);
-  const year = selected.getFullYear();
-  const month = selected.getMonth();
-
-  const first = agendaLocalISO(new Date(year, month, 1, 12, 0, 0));
-  const last = agendaLocalISO(new Date(year, month + 1, 0, 12, 0, 0));
-
-  const { data, error } = await supabase
-    .from("blocked_slots")
-    .select(`
-      id,
-      block_date,
-      block_time,
-      reserved_for,
-      client_phone,
-      notes,
-      created_by,
-      created_at,
-      group_id,
-      recurrence_days,
-      recurrence_weekday,
-      recurrence_frequency_weeks
-    `)
-    .gte("block_date", first)
-    .lte("block_date", last)
-    .order("block_date", { ascending: true })
-    .order("block_time", { ascending: true });
-
-  if (error) {
-    console.error("Erro ao carregar fixos da agenda:", error);
-    showToast("Não foi possível carregar os horários fixos da Agenda.", true);
-    return [];
-  }
-
-  state.agendaBlockedSlots = data || [];
-
-  // Também atualiza o cache geral com as linhas deste mês,
-  // sem duplicar registros.
-  const byId = new Map(
-    [...state.blockedSlots, ...state.agendaBlockedSlots]
-      .filter(item => item?.id)
-      .map(item => [item.id, item])
-  );
-
-  state.blockedSlots = [...byId.values()];
-
-  return state.agendaBlockedSlots;
-}
-
-function getExactAgendaBlockedSlotsForDate(dateISO) {
-  return state.agendaBlockedSlots
-    .filter(b => b.block_date === dateISO)
-    .sort((a,b) =>
-      String(a.block_time).localeCompare(String(b.block_time))
-    );
-}
-
-async function refreshAgendaCalendar() {
-  if (state.profile?.role !== "owner") return;
-
-  await loadAgendaBlockedSlotsForMonth(state.agendaSelectedDate);
-  renderDashboard();
-}
-
-
 function agendaLocalISO(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -1326,21 +1250,19 @@ function agendaSelectedDateObj() {
   return new Date(`${value}T12:00:00`);
 }
 
-async function setAgendaDate(date) {
+function setAgendaDate(date) {
   state.agendaSelectedDate = date;
-  await loadAgendaBlockedSlotsForMonth(date);
   renderDashboard();
 }
 
-async function changeAgendaDay(amount) {
+function changeAgendaDay(amount) {
   const d = agendaSelectedDateObj();
   d.setDate(d.getDate() + Number(amount));
   state.agendaSelectedDate = agendaLocalISO(d);
-  await loadAgendaBlockedSlotsForMonth(state.agendaSelectedDate);
   renderDashboard();
 }
 
-async function changeAgendaMonth(amount) {
+function changeAgendaMonth(amount) {
   const current = agendaSelectedDateObj();
   const target = new Date(
     current.getFullYear(),
@@ -1350,95 +1272,13 @@ async function changeAgendaMonth(amount) {
   );
 
   state.agendaSelectedDate = agendaLocalISO(target);
-  await loadAgendaBlockedSlotsForMonth(state.agendaSelectedDate);
   renderDashboard();
 }
 
-async function agendaToday() {
+function agendaToday() {
   state.agendaSelectedDate = agendaLocalISO(new Date());
-  await loadAgendaBlockedSlotsForMonth(state.agendaSelectedDate);
   renderDashboard();
 }
-
-
-function daysBetweenISO(startISO, endISO) {
-  const start = new Date(`${startISO}T12:00:00`);
-  const end = new Date(`${endISO}T12:00:00`);
-  return Math.round((end - start) / 86400000);
-}
-
-function getAgendaBlockedSlotsForDate(date, appointmentsForDate = []) {
-  const exact = state.blockedSlots
-    .filter(b => b.block_date === date)
-    .map(b => ({ ...b, virtual_recurrence: false }));
-
-  const exactIds = new Set(exact.map(b => b.id));
-  const exactGroupTimes = new Set(
-    exact.map(b => `${b.group_id || "single"}|${String(b.block_time).slice(0,5)}`)
-  );
-
-  const appointmentTimes = new Set(
-    appointmentsForDate
-      .filter(a => a.status !== "cancelled")
-      .map(a => String(a.appointment_time).slice(0,5))
-  );
-
-  // Agrupa séries já existentes por group_id.
-  const groups = new Map();
-
-  state.blockedSlots.forEach(b => {
-    if (!b.group_id || !b.recurrence_days) return;
-
-    if (!groups.has(b.group_id)) groups.set(b.group_id, []);
-    groups.get(b.group_id).push(b);
-  });
-
-  const derived = [];
-
-  for (const [groupId, rows] of groups.entries()) {
-    rows.sort((a,b) => String(a.block_date).localeCompare(String(b.block_date)));
-
-    const first = rows[0];
-    const firstDate = first.block_date;
-    const recurrenceDays = Number(first.recurrence_days || 0);
-    const frequencyWeeks = Number(first.recurrence_frequency_weeks || 1);
-    const weekday = Number(first.recurrence_weekday);
-
-    if (!firstDate || !recurrenceDays || ![1,2].includes(frequencyWeeks)) continue;
-
-    const target = new Date(`${date}T12:00:00`);
-
-    if (target.getDay() !== weekday) continue;
-
-    const diff = daysBetweenISO(firstDate, date);
-
-    if (diff < 0 || diff >= recurrenceDays) continue;
-
-    // Toda semana = 7 dias; semana sim/semana não = 14 dias.
-    const intervalDays = 7 * frequencyWeeks;
-
-    if (diff % intervalDays !== 0) continue;
-
-    const time = String(first.block_time).slice(0,5);
-
-    // Se já existe linha real para a data/horário, não duplica.
-    if (exactGroupTimes.has(`${groupId}|${time}`)) continue;
-
-    // Se existe atendimento no mesmo horário, prioriza o atendimento.
-    if (appointmentTimes.has(time)) continue;
-
-    derived.push({
-      ...first,
-      id: `virtual-${groupId}-${date}-${time}`,
-      block_date: date,
-      virtual_recurrence: true
-    });
-  }
-
-  return [...exact, ...derived]
-    .sort((a,b) => String(a.block_time).localeCompare(String(b.block_time)));
-}
-
 
 function renderAgendaCalendar(allAppointments) {
   const selected = agendaSelectedDateObj();
@@ -1465,15 +1305,14 @@ function renderAgendaCalendar(allAppointments) {
       (countByDate.get(a.appointment_date) || 0) + 1
     );
   });
-  // Conta os horários fixos EXATAMENTE como estão gravados no Supabase.
-  state.agendaBlockedSlots.forEach(b => {
+
+  state.blockedSlots.forEach(b => {
     if (!b.block_date) return;
     countByDate.set(
       b.block_date,
       (countByDate.get(b.block_date) || 0) + 1
     );
   });
-  }
 
   const blanks = Array.from({ length: startWeekday }, () =>
     `<div class="agenda-calendar-empty"></div>`
@@ -1575,7 +1414,9 @@ function renderOwner() {
       .filter(a => a.appointment_date === selectedDate)
       .sort((a,b) => String(a.appointment_time).localeCompare(String(b.appointment_time)));
 
-    const selectedBlockedSlots = getExactAgendaBlockedSlotsForDate(selectedDate);
+    const selectedBlockedSlots = state.blockedSlots
+      .filter(b => b.block_date === selectedDate)
+      .sort((a,b) => String(a.block_time).localeCompare(String(b.block_time)));
 
     const selectedAgendaCount =
       selectedAppointments.length + selectedBlockedSlots.length;
@@ -1676,7 +1517,7 @@ function renderOwner() {
                               : ""}
                           </td>
                           <td>
-                            <strong>Horário fixo${b.virtual_recurrence ? " recorrente" : ""}</strong>
+                            <strong>Horário fixo</strong>
                             ${b.notes
                               ? `<br><small style="color:#666">${escapeHtml(b.notes)}</small>`
                               : ""}
@@ -2102,7 +1943,6 @@ window.setAgendaDate = setAgendaDate;
 window.changeAgendaDay = changeAgendaDay;
 window.changeAgendaMonth = changeAgendaMonth;
 window.agendaToday = agendaToday;
-window.refreshAgendaCalendar = refreshAgendaCalendar;
 window.renderDashboard = renderDashboard;
 
 window.newService = newService;
@@ -2120,10 +1960,7 @@ window.goDash = async id => {
   if (["overview","agenda","appointments","clients"].includes(id)) await loadAppointments();
   if (state.profile?.role === "owner" && id === "overview") await loadOwnerStats();
   if (state.profile?.role === "owner" && id === "logs") await loadOwnerLogs();
-  if (state.profile?.role === "owner" && id === "agenda") {
-    await loadBlockedSlots();
-    await loadAgendaBlockedSlotsForMonth(state.agendaSelectedDate);
-  }
+  if (state.profile?.role === "owner" && id === "agenda") await loadBlockedSlots();
   if (state.profile?.role === "owner" && id === "blocked") await loadBlockedSlots();
   if (state.profile?.role === "owner" && id === "business") await loadBusinessSettings();
   renderDashboardNav();
